@@ -1,0 +1,61 @@
+SELECT
+(
+	SELECT
+		h.OrderKey,
+		h.OrderID,
+		br.BranchName,
+		br.ExternalCode,
+		( CASE WHEN h.IsEInvoice = 1 THEN 'E-FATURA' ELSE 'E-ARŞİV' END ) AS [Type],
+		CONVERT(DECIMAL(18,2), h.InvoiceTotal) AS [InvoiceTotal],
+		CONVERT(DECIMAL(18,2), h.OrderDiscount) AS [OrderDiscount],
+		h.InvoiceDate,
+		h.CustomerName,
+		h.CustomerTaxNo,
+		h.CustomerTaxOffice,
+		ISNULL(h.UrnMail,'') AS [CustomerEMail],
+		h.CustomerStreetName AS [CustomerAddress],
+		h.InvoiceRefNo AS RefNo,
+		'RobotPos' AS UserCode,
+		'TD' AS UserType,
+		(
+			SELECT
+				d.LineKey AS TransactionKey,
+				d.ItemCode,
+				d.ItemsDefinition,
+				CAST ( d.TaxPercent AS INT ) AS TaxPercent,
+				CONVERT ( DECIMAL ( 18, 3 ), d.Quantity ) AS [Quantity],
+				CONVERT ( DECIMAL ( 18, 2 ), d.UnitPrice ) AS [UnitPrice],
+				CONVERT ( DECIMAL ( 18, 2 ), d.ExtendedPrice ) AS [Amount],
+				CONVERT ( DECIMAL ( 18, 2 ), d.DiscountTotal ) AS [DiscountTotal],
+				d.IsMainCombo,
+				d.MainMenuItemTransactionKey AS MainTransactionKey
+			FROM
+				EInvoiceDetail d WITH(NOLOCK)
+			WHERE
+				d.OrderKey = h.OrderKey FOR JSON PATH	
+		) AS Items, 
+		(
+			SELECT
+				p.PaymentKey,
+				ISNULL(p.PaymentName2, p.PaymentName) AS PaymentName,
+				p.GlobalBankName AS SubPaymentName,
+				CONVERT ( DECIMAL ( 18, 2 ), p.Amount ) AS [Amount] 
+			FROM
+				EInvoicePayment p WITH(NOLOCK)
+			WHERE
+				p.OrderKey = h.OrderKey FOR JSON PATH
+		) AS Payments
+	FROM
+		EInvoiceHeader h WITH(NOLOCK)
+		INNER JOIN efr_Branchs br ON br.BranchID= h.Branch AND br.CustomField7 = 'TDUN'
+		LEFT JOIN SyncLogoEInvoiceSend s ON s.ORDERKEY = h.OrderKey
+	WHERE
+		1=1
+		AND h.IsChecked = 1
+		AND ISNULL(h.CustomerTaxNo, '') <> ''
+		AND h.InvoiceDate BETWEEN @StartDate AND @EndDate
+		AND h.InvoiceDate > '2020-01-01'
+	ORDER BY h.InvoiceDate ASC
+	
+	FOR JSON PATH
+) AS Result

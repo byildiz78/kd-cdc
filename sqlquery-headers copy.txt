@@ -1,0 +1,37 @@
+SELECT
+(
+	SELECT
+		h.OrderKey,
+		h.OrderID,
+		br.BranchName,
+		br.ExternalCode,
+		( CASE WHEN h.IsEInvoice = 1 THEN 'E-FATURA' ELSE 'E-ARŞİV' END ) AS [Type],
+		CONVERT(DECIMAL(18,2), h.InvoiceTotal) AS [InvoiceTotal],
+		CONVERT(DECIMAL(18,2), h.OrderDiscount) AS [OrderDiscount],
+		h.InvoiceDate,
+		h.CustomerName,
+		h.CustomerTaxNo,
+		s.REF_NO,
+		h.CustomerTaxOffice,
+		ISNULL(h.UrnMail,'') AS [CustomerEMail],
+		h.CustomerStreetName AS [CustomerAddress],
+		h.InvoiceRefNo AS RefNo,
+		'RobotPos' AS UserCode,
+		'TD' AS UserType,
+		(SELECT COUNT(*) FROM EInvoiceDetail d WITH(NOLOCK) WHERE d.OrderKey = h.OrderKey) AS ItemCount,
+		(SELECT COUNT(*) FROM EInvoicePayment p WITH(NOLOCK) WHERE p.OrderKey = h.OrderKey) AS PaymentCount,
+		CASE WHEN s.ORDERKEY IS NOT NULL THEN 1 ELSE 0 END AS IsTransferred
+	FROM
+		EInvoiceHeader h WITH(NOLOCK)
+		INNER JOIN efr_Branchs br ON br.BranchID= h.Branch AND br.CustomField7 = 'TDUN'
+		LEFT JOIN SyncLogoEInvoiceSend s ON s.ORDERKEY = h.OrderKey
+	WHERE
+		1=1
+		
+		AND ISNULL(h.CustomerTaxNo, '') <> ''
+		AND CAST(h.InvoiceDate AS DATE) BETWEEN @StartDate AND @EndDate
+		AND h.InvoiceDate > '2020-01-01'
+	ORDER BY h.InvoiceDate ASC
+	
+	FOR JSON PATH
+) AS Result
