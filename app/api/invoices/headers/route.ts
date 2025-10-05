@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { isAuthenticated } from '@/lib/utils/auth';
 
 /**
  * @swagger
@@ -11,6 +12,7 @@ import path from 'path';
  *     tags:
  *       - Invoices
  *     security:
+ *       - bearerAuth: []
  *       - cookieAuth: []
  *     parameters:
  *       - in: query
@@ -72,36 +74,10 @@ import path from 'path';
 export async function GET(request: NextRequest) {
   try {
     console.log('Headers API Route called');
-    
-    // Check session authentication
-    const cookieHeader = request.headers.get('cookie');
-    const sessionCookie = cookieHeader?.split(';')
-      .find(c => c.trim().startsWith('session='))
-      ?.split('=')[1];
-    
-    if (!sessionCookie) {
+
+    if (!isAuthenticated(request)) {
       return NextResponse.json(
         { error: 'Unauthorized', details: 'Please login first' },
-        { status: 401 }
-      );
-    }
-    
-    // Decode and verify session
-    try {
-      const decoded = decodeURIComponent(sessionCookie);
-      const sessionData = Buffer.from(decoded, 'base64').toString();
-      const [username, timestamp] = sessionData.split(':');
-      
-      // Check if session is valid (less than 24 hours old)
-      if (Date.now() - parseInt(timestamp) > 24 * 60 * 60 * 1000) {
-        return NextResponse.json(
-          { error: 'Session expired', details: 'Please login again' },
-          { status: 401 }
-        );
-      }
-    } catch (error) {
-      return NextResponse.json(
-        { error: 'Invalid session', details: 'Please login again' },
         { status: 401 }
       );
     }

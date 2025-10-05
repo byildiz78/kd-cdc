@@ -5,20 +5,26 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'e Invoice API',
+      title: 'robotPOS API',
       version: '1.0.0',
-      description: 'E-Invoice management system API',
+      description: 'robotPOS Veri Aktarım Platformu API',
     },
     servers: [
       {
-        url: process.env.NODE_ENV === 'production' 
-          ? `http://138.199.208.103:3078${process.env.NEXT_PUBLIC_BASEPATH || ''}` 
+        url: process.env.NODE_ENV === 'production'
+          ? `http://138.199.208.103:3078${process.env.NEXT_PUBLIC_BASEPATH || ''}`
           : `http://localhost:3000${process.env.NEXT_PUBLIC_BASEPATH || ''}`,
         description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server',
       },
     ],
     components: {
       securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Bearer token authentication using ROBOTPOS_API_TOKEN',
+        },
         cookieAuth: {
           type: 'apiKey',
           in: 'cookie',
@@ -195,6 +201,9 @@ const options = {
       },
     },
     security: [
+      {
+        bearerAuth: [],
+      },
       {
         cookieAuth: [],
       },

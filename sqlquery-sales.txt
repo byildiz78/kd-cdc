@@ -1,0 +1,59 @@
+SELECT 
+    br.BranchName,
+    CONVERT(VARCHAR, h.OrderDateTime, 23) AS [SheetDate],
+    t.MainMenuItemAccountingCode AS [MainAccountingCode],
+    t.AccountingCode AS [AccountingCode],
+    t.MenuItemText,
+    ISNULL(t.IsMainCombo, 0) AS [IsMainCombo],
+    ROUND(SUM(t.Quantity), 3) AS [Quantity],
+
+    ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) -
+    ROUND(SUM(ROUND((t.ExtendedPrice * t.TaxPercent) / (100 + t.TaxPercent) *
+          ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1), 5)), 5) AS [SubTotal],
+
+    ROUND(ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) -
+          (ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) -
+           ROUND(SUM(ROUND((t.ExtendedPrice * t.TaxPercent) / (100 + t.TaxPercent) *
+                 ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1), 5)), 5)), 5) AS [TaxTotal],
+
+    ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) AS [Total],
+
+    t.TaxPercent AS [TaxPercent],
+    t.BranchID AS [BranchID],
+    ISNULL(bre.ExternalCode, br.ExternalCode) AS [BranchCode],
+    CAST((CASE WHEN bre.AutoID IS NULL THEN 0 ELSE 1 END) AS BIT) AS [IsExternal]
+FROM OrderTransactions t WITH(NOLOCK)
+    INNER JOIN OrderHeaders h WITH(NOLOCK)
+        ON h.OrderKey = t.OrderKey
+    INNER JOIN efr_Branchs br WITH(NOLOCK)
+        ON br.BranchID = t.BranchID
+    LEFT JOIN efr_BranchExternals bre WITH(NOLOCK)
+        ON bre.BranchID = t.BranchID
+        AND bre.[Date] = CONVERT(VARCHAR, h.OrderDateTime, 23)
+WHERE 1=1
+    AND h.LineDeleted = 0
+    AND t.LineDeleted = 0
+    AND t.OrderDateTime BETWEEN @StartDate AND @EndDate
+    AND h.OrderDateTime BETWEEN @StartDate AND @EndDate
+    AND t.BranchID > 0
+    AND ISNULL(h.MainOrderID,0) <> -1
+    AND ISNULL(h.IsInvoice,0) = 0
+    AND t.MenuItemText NOT IN (
+        'BAR MESAJ', 'CIKOLATA MESAJ', 'MUTFAK MESAJ', '??',
+        'BEKLET', 'MADLEN', 'MARS', 'SEKERLI',
+        'MUTFAK BAR MESAJ', 'SISE', 'BAYLAN YILBAŞI OZEL KUTU'
+    )
+    AND h.OrderStatus = 2
+    AND br.CustomField1 IN ('KD', 'BY', 'KB')
+GROUP BY
+    CONVERT(VARCHAR, h.OrderDateTime, 23),
+    t.AccountingCode,
+    t.MainMenuItemAccountingCode,
+    t.TaxPercent,
+    ISNULL(t.IsMainCombo, 0),
+    t.BranchID,
+    ISNULL(bre.ExternalCode, br.ExternalCode),
+    bre.AutoID,
+    t.MenuItemText,
+    br.BranchName
+ORDER BY SheetDate DESC, BranchID, AccountingCode

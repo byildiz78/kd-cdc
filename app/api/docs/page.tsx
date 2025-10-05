@@ -10,8 +10,8 @@ export default function ApiDocsPage() {
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">E Invoice API Documentation</h1>
-          <p className="text-gray-600 mt-2">E-Invoice management system API documentation</p>
+          <h1 className="text-3xl font-bold text-gray-900">robotPOS API Dokümantasyon</h1>
+          <p className="text-gray-600 mt-2">robotPOS Veri Aktarım Platformu API dokümantasyonu</p>
         </div>
       </div>
       

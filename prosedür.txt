@@ -1,0 +1,275 @@
+CREATE PROCEDURE [dbo].[syncSheetSalesV2]
+    @StartDate DATETIME,
+    @EndDate DATETIME
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Değişken tanımlamaları
+    DECLARE @startDateLimit DATETIME
+    DECLARE @t1 DATETIME
+    DECLARE @t2 DATETIME
+    DECLARE @elapsed VARCHAR(8)
+    DECLARE @message NVARCHAR(1000)
+
+    SET @t1 = GETDATE()
+    SET @startDateLimit = DATEADD(DAY, -16, CONVERT(VARCHAR, GETDATE(), 23))
+
+    ------------------------------------------------------------------------------------------------------------------------
+    -- TEMP TABLOLARI TEMİZLE
+    ------------------------------------------------------------------------------------------------------------------------
+    IF OBJECT_ID('tempdb..#allSales') IS NOT NULL DROP TABLE #allSales
+    IF OBJECT_ID('tempdb..#dbSales') IS NOT NULL DROP TABLE #dbSales
+    IF OBJECT_ID('tempdb..#delist') IS NOT NULL DROP TABLE #delist
+
+    ------------------------------------------------------------------------------------------------------------------------
+    -- 1. TÜM SATIŞ VERİLERİNİ TOPLA (#allSales)
+    ------------------------------------------------------------------------------------------------------------------------
+    SELECT 
+        CONVERT(VARCHAR, h.OrderDateTime, 23) AS [SheetDate],
+        t.MainMenuItemAccountingCode AS [MainAccountingCode],
+        t.AccountingCode AS [AccountingCode],
+        ISNULL(t.IsMainCombo, 0) AS [IsMainCombo],
+        ROUND(SUM(t.Quantity), 3) AS [Quantity],
+        
+        -- SubTotal hesaplama
+        ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) - 
+        ROUND(SUM(ROUND((t.ExtendedPrice * t.TaxPercent) / (100 + t.TaxPercent) * 
+              ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1), 5)), 5) AS [SubTotal],
+        
+        -- TaxTotal hesaplama  
+        ROUND(ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) -
+              (ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) - 
+               ROUND(SUM(ROUND((t.ExtendedPrice * t.TaxPercent) / (100 + t.TaxPercent) * 
+                     ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1), 5)), 5)), 5) AS [TaxTotal],
+        
+        -- Total hesaplama
+        ROUND(SUM(t.ExtendedPrice * ISNULL(NULLIF(h.AmountDue,0),1) / ISNULL(NULLIF(h.SubTotal,0),1)), 5) AS [Total],
+        
+        t.TaxPercent AS [TaxPercent],
+        t.BranchID AS [BranchID],
+        ISNULL(bre.ExternalCode, br.ExternalCode) AS [BranchCode],
+        CAST((CASE WHEN bre.AutoID IS NULL THEN 0 ELSE 1 END) AS BIT) AS [IsExternal]
+    INTO #allSales
+    FROM OrderTransactions t WITH(NOLOCK)
+        INNER JOIN OrderHeaders h WITH(NOLOCK) 
+            ON h.OrderKey = t.OrderKey
+        INNER JOIN efr_Branchs br WITH(NOLOCK) 
+            ON br.BranchID = t.BranchID
+        LEFT JOIN efr_BranchExternals bre WITH(NOLOCK) 
+            ON bre.BranchID = t.BranchID 
+            AND bre.[Date] = CONVERT(VARCHAR, h.OrderDateTime, 23)
+    WHERE 1=1
+        AND h.LineDeleted = 0 
+        AND t.LineDeleted = 0 
+        AND t.OrderDateTime >= @startDateLimit
+        AND h.OrderDateTime >= @startDateLimit
+        AND t.OrderDateTime BETWEEN @StartDate AND @EndDate
+        AND h.OrderDateTime BETWEEN @StartDate AND @EndDate
+        AND t.BranchID > 0
+        AND ISNULL(h.MainOrderID,0) <> -1
+        AND ISNULL(h.IsInvoice,0) = 0
+        AND t.MenuItemText NOT IN (
+            'BAR MESAJ', 'CIKOLATA MESAJ', 'MUTFAK MESAJ', '??', 
+            'BEKLET', 'MADLEN', 'MARS', 'SEKERLI', 
+            'MUTFAK BAR MESAJ', 'SISE', 'BAYLAN YILBAŞI OZEL KUTU'
+        )
+        AND h.OrderStatus = 2
+        AND br.CustomField1 IN ('KD', 'BY', 'KB')
+    GROUP BY
+        CONVERT(VARCHAR, h.OrderDateTime, 23),
+        t.AccountingCode,
+        t.MainMenuItemAccountingCode,
+        t.TaxPercent,
+        ISNULL(t.IsMainCombo, 0),
+        t.BranchID,
+        ISNULL(bre.ExternalCode, br.ExternalCode),
+        bre.AutoID
+
+    ------------------------------------------------------------------------------------------------------------------------
+    -- 2. UYUMSUZ ÜRÜNLERİ BUL (#delist)
+    ------------------------------------------------------------------------------------------------------------------------
+    SELECT
+        a.SheetDate,
+        a.BranchID
+    INTO #delist
+    FROM posProducts p
+        INNER JOIN #allSales a ON a.AccountingCode = p.ExternalCode
+    WHERE 1=1
+        AND ISNULL(p.IsActive, 0) = 1
+        AND ISNULL(p.IsMismatched, 0) = 1
+    GROUP BY
+        a.SheetDate,
+        a.BranchID
+
+    ------------------------------------------------------------------------------------------------------------------------
+    -- 3. MEVCUT VERİTABANI SATIŞ VERİLERİNİ AL (#dbSales)
+    ------------------------------------------------------------------------------------------------------------------------
+    SELECT 
+        s.[SheetDate],
+        s.[MainAccountingCode],
+        s.[AccountingCode],
+        s.[IsMainCombo], 
+        SUM(s.[Quantity]) AS [Quantity], 
+        SUM(s.[SubTotal]) AS [SubTotal], 
+        SUM(s.[TaxTotal]) AS [TaxTotal], 
+        SUM(s.[Total]) AS [Total], 
+        s.[TaxPercent], 
+        s.[BranchID], 
+        s.[BranchCode],
+        s.[IsExternal]
+    INTO #dbSales
+    FROM posSheetSalesV2 s WITH(NOLOCK)
+    WHERE 1=1
+        AND s.[SheetDate] >= @startDateLimit
+        AND s.[SheetDate] BETWEEN CONVERT(VARCHAR, @StartDate, 23) AND CONVERT(VARCHAR, @EndDate, 23)
+    GROUP BY
+        s.[SheetDate],
+        s.[MainAccountingCode],
+        s.[AccountingCode],
+        s.[IsMainCombo], 
+        s.[TaxPercent], 
+        s.[BranchID], 
+        s.[BranchCode],
+        s.[IsExternal]
+    HAVING
+        ROUND(SUM(s.[Quantity]), 3) <> 0
+
+    ------------------------------------------------------------------------------------------------------------------------
+    -- 4. ANA İŞLEM - FARKLARI BUL VE KAYDET
+    ------------------------------------------------------------------------------------------------------------------------
+    BEGIN TRY
+
+        INSERT posSheetSalesV2(
+            [Action], [SheetDate], [MainAccountingCode], [AccountingCode], 
+            [IsMainCombo], [Quantity], [SubTotal], [TaxTotal], [Total], 
+            [TaxPercent], [BranchID], [BranchCode], [IsExternal]
+        )
+        
+        -- GÜNCELLEME: Mevcut kayıtlardaki farkları ekle
+        SELECT 
+            'UPDATED' AS [Action], 
+            s.[SheetDate], 
+            s.[MainAccountingCode], 
+            s.[AccountingCode], 
+            s.[IsMainCombo],
+            (t.[Quantity] - s.[Quantity]) AS [Quantity], 
+            (t.[SubTotal] - s.[SubTotal]) AS [SubTotal],
+            (t.[TaxTotal] - s.[TaxTotal]) AS [TaxTotal], 
+            (t.[Total] - s.[Total]) AS [Total], 
+            s.[TaxPercent],
+            s.[BranchID], 
+            s.[BranchCode],
+            s.[IsExternal] 
+        FROM #dbSales s
+            INNER JOIN #allSales t 
+                ON t.SheetDate = s.SheetDate 
+                AND t.BranchID = s.BranchID 
+                AND t.BranchCode = s.BranchCode 
+                AND t.AccountingCode = s.AccountingCode 
+                AND t.IsMainCombo = s.IsMainCombo 
+                AND t.TaxPercent = s.TaxPercent 
+                AND ISNULL(t.MainAccountingCode,'') = ISNULL(s.MainAccountingCode,'')
+        WHERE 1=1
+            AND ROUND((t.[Quantity] - s.[Quantity]), 3) <> 0
+            
+        UNION ALL
+
+        -- EKLEME: Yeni kayıtları ekle
+        SELECT
+            'INSERTED' AS [Action], 
+            s.[SheetDate],
+            s.[MainAccountingCode],
+            s.[AccountingCode],
+            s.[IsMainCombo], 
+            s.[Quantity], 
+            s.[SubTotal], 
+            s.[TaxTotal],
+            s.[Total],
+            s.[TaxPercent],
+            s.[BranchID], 
+            s.[BranchCode],
+            s.[IsExternal]
+        FROM #allSales s
+            LEFT JOIN #dbSales t 
+                ON t.SheetDate = s.SheetDate 
+                AND t.BranchID = s.BranchID 
+                AND t.BranchCode = s.BranchCode 
+                AND t.AccountingCode = s.AccountingCode 
+                AND t.IsMainCombo = s.IsMainCombo 
+                AND t.TaxPercent = s.TaxPercent 
+                AND ISNULL(t.MainAccountingCode,'') = ISNULL(s.MainAccountingCode,'')
+        WHERE 1=1
+            AND t.BranchID IS NULL
+            AND s.[AccountingCode] IS NOT NULL
+
+        UNION ALL
+
+        -- SİLME: Artık olmayan kayıtları negatif olarak ekle
+        SELECT 
+            'DELETED' AS [Action], 
+            s.[SheetDate],
+            s.[MainAccountingCode],
+            s.[AccountingCode],
+            s.[IsMainCombo], 
+            s.[Quantity] * -1.0, 
+            s.[SubTotal] * -1.0, 
+            s.[TaxTotal] * -1.0,
+            s.[Total] * -1.0,
+            s.[TaxPercent],
+            s.[BranchID], 
+            s.[BranchCode],
+            s.[IsExternal]
+        FROM #dbSales s
+            LEFT JOIN #allSales t 
+                ON t.SheetDate = s.SheetDate 
+                AND t.BranchID = s.BranchID 
+                AND t.BranchCode = s.BranchCode 
+                AND t.AccountingCode = s.AccountingCode 
+                AND t.IsMainCombo = s.IsMainCombo 
+                AND t.TaxPercent = s.TaxPercent 
+                AND ISNULL(t.MainAccountingCode,'') = ISNULL(s.MainAccountingCode,'')
+        WHERE 1=1
+            AND t.BranchID IS NULL
+
+        -- Başarılı işlem mesajı
+        SET @t2 = GETDATE()
+        SET @elapsed = CONVERT(VARCHAR(8), DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, @t1, @t2) + 86400000, 0), 114)
+        SET @message = CONCAT(
+            'GECEYARISI @StartDate: ', FORMAT(@StartDate, 'yyyy-MM-dd HH:mm:ss'), 
+            ' @EndDate: ', FORMAT(@EndDate, 'yyyy-MM-dd HH:mm:ss'), 
+            ' Süre: ', @elapsed, 
+            ' User: ', SUSER_NAME()
+        )
+
+    END TRY
+    BEGIN CATCH
+        -- Hata durumu mesajı
+        SET @t2 = GETDATE()
+        SET @elapsed = CONVERT(VARCHAR(8), DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, @t1, @t2) + 86400000, 0), 114)
+        SET @message = CONCAT(
+            'GECEYARISI @StartDate: ', FORMAT(@StartDate, 'yyyy-MM-dd HH:mm:ss'), 
+            ' @EndDate: ', FORMAT(@EndDate, 'yyyy-MM-dd HH:mm:ss'), 
+            ' Süre: ', @elapsed, 
+            ' User: ', SUSER_NAME(), 
+            ' ERROR_NUMBER: ', ERROR_NUMBER(), 
+            ' ERROR_SEVERITY: ', ERROR_SEVERITY(), 
+            ' ERROR_STATE: ', ERROR_STATE(), 
+            ' ERROR_PROCEDURE: ', ERROR_PROCEDURE(), 
+            ' ERROR_LINE: ', ERROR_LINE(), 
+            ' ERROR_MESSAGE: ', ERROR_MESSAGE()
+        )
+        ;THROW 60000, @message, 1
+    END CATCH
+
+    ------------------------------------------------------------------------------------------------------------------------
+    -- TEMP TABLOLARI TEMİZLE
+    ------------------------------------------------------------------------------------------------------------------------
+    IF OBJECT_ID('tempdb..#allSales') IS NOT NULL DROP TABLE #allSales
+    IF OBJECT_ID('tempdb..#dbSales') IS NOT NULL DROP TABLE #dbSales
+    IF OBJECT_ID('tempdb..#delist') IS NOT NULL DROP TABLE #delist
+
+    -- İşlem logunu kaydet
+    INSERT INTO posSheetSalesV2_logs(Message) VALUES(@message)
+
+END
