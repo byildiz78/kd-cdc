@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import { isAuthenticated } from '@/lib/utils/auth';
+import { authenticate } from '@/lib/auth/middleware';
+import { getQueryByCode, replaceQueryParams } from '@/lib/services/query.service';
+import { executeRobotPosQuery, parseSalesResponse } from '@/lib/services/robotpos.service';
 
 /**
  * @swagger
@@ -12,7 +12,6 @@ import { isAuthenticated } from '@/lib/utils/auth';
  *     tags:
  *       - Sales
  *     security:
- *       - bearerAuth: []
  *       - cookieAuth: []
  *     parameters:
  *       - in: query
@@ -41,7 +40,9 @@ import { isAuthenticated } from '@/lib/utils/auth';
  */
 export async function GET(request: NextRequest) {
   try {
-    if (!isAuthenticated(request)) {
+    // Authenticate
+    const auth = await authenticate(request);
+    if (!auth) {
       return NextResponse.json(
         { error: 'Unauthorized', details: 'Please login first' },
         { status: 401 }
@@ -58,84 +59,49 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           error: 'Missing required parameters',
-          details: 'Please provide both startDate and endDate parameters'
+          details: 'Please provide both startDate and endDate parameters',
         },
         { status: 400 }
       );
     }
 
-    const sqlFilePath = path.join(process.cwd(), 'sqlquery-sales.txt');
-    let sqlQuery = fs.readFileSync(sqlFilePath, 'utf-8');
+    // Get query from database
+    const query = await getQueryByCode('sales-data');
 
+    // Format dates (replace - with / for sales query)
     const formattedStartDate = startDate.replace(/-/g, '/');
     const formattedEndDate = endDate.replace(/-/g, '/');
 
-    sqlQuery = sqlQuery.replace(/@StartDate/g, `'${formattedStartDate}'`);
-    sqlQuery = sqlQuery.replace(/@EndDate/g, `'${formattedEndDate}'`);
+    // Replace parameters
+    const sqlQuery = replaceQueryParams(query.sqlContent, {
+      StartDate: formattedStartDate,
+      EndDate: formattedEndDate,
+    });
 
     console.log('Formatted dates:', { formattedStartDate, formattedEndDate });
 
-    const apiUrl = process.env.ROBOTPOS_API_URL;
-    const apiToken = process.env.ROBOTPOS_API_TOKEN;
+    // Execute query on RobotPos API
+    const data = await executeRobotPosQuery(auth.apiUrl, auth.apiToken, sqlQuery);
 
-    if (!apiUrl || !apiToken) {
-      throw new Error('API configuration is missing');
-    }
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: sqlQuery
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    const responseText = await response.text();
-    console.log('Raw API response length:', responseText.length);
-
-    let apiResponse;
-
-    try {
-      apiResponse = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('Failed to parse API response as JSON:', parseError);
-      throw new Error('Invalid JSON response from API');
-    }
-
-    console.log('API Response:', {
-      hasData: !!apiResponse?.data,
-      dataLength: apiResponse?.data?.length,
-      totalRows: apiResponse?.totalRows,
-      error: apiResponse?.error
-    });
-
-    const salesData = apiResponse?.data || [];
+    // Parse response
+    const salesData = parseSalesResponse(data);
     console.log('Sales data count:', salesData.length);
 
     const headers = new Headers();
     headers.set('Cache-Control', 'private, max-age=60');
 
     return NextResponse.json(salesData, { headers });
-
   } catch (error) {
     console.error('API Error Details:', {
       error,
       message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
+      stack: error instanceof Error ? error.stack : undefined,
     });
 
     return NextResponse.json(
       {
         error: 'Failed to fetch sales data',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
     );

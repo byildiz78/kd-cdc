@@ -1,0 +1,62 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Sidebar from '@/components/Sidebar';
+
+export default function SalesLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const router = useRouter();
+  const [user, setUser] = useState<{ username: string } | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/auth/me');
+        if (!response.ok) {
+          router.push('/');
+          return;
+        }
+        const data = await response.json();
+        setUser(data.user);
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        router.push('/');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.push('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">Yukleniyor...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar username={user?.username} onLogout={handleLogout} />
+      <main className="flex-1 overflow-y-auto">
+        {children}
+      </main>
+    </div>
+  );
+}

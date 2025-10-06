@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FileText, LayoutDashboard, Database, ChevronLeft, ChevronRight, User, LogOut, TrendingUp, ChartBar as BarChart3, Upload, BookOpen } from 'lucide-react';
+import { FileText, LayoutDashboard, Database, ChevronLeft, ChevronRight, User, LogOut, BookOpen, Settings, Code2, Building2, Table, BarChart3, AlertCircle, RefreshCw, TrendingUp, FileLineChart, Trash2, Activity } from 'lucide-react';
 
 interface SidebarProps {
   username?: string;
@@ -28,28 +28,66 @@ export default function Sidebar({ username, onLogout }: SidebarProps) {
       active: pathname === '/invoices'
     },
     {
-      name: 'Veri Aktarım Yönetimi',
+      name: 'Satış Verileri',
       icon: Database,
-      href: '/data-transfer',
-      active: pathname === '/data-transfer',
+      href: '/sales',
+      active: pathname.startsWith('/sales'),
       subItems: [
         {
-          name: 'Satış Verileri',
-          icon: TrendingUp,
-          href: '/sales-data',
-          active: pathname === '/sales-data'
+          name: 'Ham Veri',
+          icon: Table,
+          href: '/sales/raw',
+          active: pathname === '/sales/raw'
         },
         {
-          name: 'Satış Verileri Özet',
+          name: 'Özet Veri',
           icon: BarChart3,
-          href: '/sales-summary',
-          active: pathname === '/sales-summary'
+          href: '/sales/summary',
+          active: pathname === '/sales/summary'
         },
         {
-          name: 'Satış Verileri Aktarım',
-          icon: Upload,
-          href: '/sales-transfer',
-          active: pathname === '/sales-transfer'
+          name: 'Delta Kayıtları',
+          icon: AlertCircle,
+          href: '/sales/delta',
+          active: pathname === '/sales/delta'
+        },
+        {
+          name: 'Senkronizasyon',
+          icon: RefreshCw,
+          href: '/sales/sync',
+          active: pathname === '/sales/sync'
+        }
+      ]
+    },
+    {
+      name: 'Raporlar',
+      icon: FileLineChart,
+      href: '/reports',
+      active: pathname.startsWith('/reports'),
+      subItems: [
+        {
+          name: 'Senkronizasyon Loglari',
+          icon: RefreshCw,
+          href: '/reports/sync-logs',
+          active: pathname === '/reports/sync-logs'
+        },
+        {
+          name: 'Guncellenen Kayitlar',
+          icon: TrendingUp,
+          href: '/reports/updated-records',
+          active: pathname === '/reports/updated-records'
+        },
+        {
+          name: 'Delta Degisiklikleri',
+          icon: AlertCircle,
+          href: '/reports/delta-changes',
+          active: pathname === '/reports/delta-changes'
+        },
+        {
+          name: 'ERP API Loglari',
+          icon: Activity,
+          href: '/reports/erp-api-logs',
+          active: pathname === '/reports/erp-api-logs'
         }
       ]
     }
@@ -128,6 +166,71 @@ export default function Sidebar({ username, onLogout }: SidebarProps) {
       </nav>
 
       <div className="mt-auto">
+        <div className="p-4 border-t border-gray-200">
+          <Link
+            href="/settings"
+            className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+              pathname.startsWith('/settings')
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+            title={collapsed ? 'Ayarlar' : ''}
+          >
+            <Settings className="h-5 w-5 flex-shrink-0" />
+            {!collapsed && (
+              <span className="text-sm font-medium">Ayarlar</span>
+            )}
+          </Link>
+          {!collapsed && pathname.startsWith('/settings') && (
+            <div className="ml-4 mt-2 space-y-1">
+              <Link
+                href="/settings/companies"
+                className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                  pathname.startsWith('/settings/companies')
+                    ? 'bg-blue-100 text-blue-700 border-l-4 border-blue-600'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Building2 className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium">Firma Tanımları</span>
+              </Link>
+              <Link
+                href="/settings/queries"
+                className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                  pathname.startsWith('/settings/queries')
+                    ? 'bg-blue-100 text-blue-700 border-l-4 border-blue-600'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Code2 className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium">Sorgular</span>
+              </Link>
+              <Link
+                href="/settings/db-operations"
+                className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                  pathname.startsWith('/settings/db-operations')
+                    ? 'bg-blue-100 text-blue-700 border-l-4 border-blue-600'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Trash2 className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium">DB İşlemleri</span>
+              </Link>
+              <Link
+                href="/settings/developer-notes"
+                className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 ${
+                  pathname.startsWith('/settings/developer-notes')
+                    ? 'bg-blue-100 text-blue-700 border-l-4 border-blue-600'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <BookOpen className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm font-medium">Developer Notes</span>
+              </Link>
+            </div>
+          )}
+        </div>
+
         <div className="p-4 border-t border-gray-200">
           <Link
             href="/api/docs"

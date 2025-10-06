@@ -1,52 +1,102 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { verifyPassword } from '@/lib/auth/password';
+import { createSession } from '@/lib/auth/session';
 
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: User login
+ *     description: Authenticate user and create session
+ *     tags:
+ *       - Authentication
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid credentials
+ */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { username, password } = body;
+    const { username, password } = await request.json();
 
-    // Get credentials from environment
-    const validUsername = process.env.LOGIN_USERNAME;
-    const validPassword = process.env.LOGIN_PASSWORD;
-
-    if (!validUsername || !validPassword) {
+    if (!username || !password) {
       return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
+        { error: 'Username and password are required' },
+        { status: 400 }
       );
     }
 
-    // Validate credentials
-    if (username === validUsername && password === validPassword) {
-      // Create a simple session token (in production, use proper JWT)
-      const sessionToken = Buffer.from(`${username}:${Date.now()}`).toString('base64');
-      
-      const response = NextResponse.json(
-        { 
-          success: true, 
-          message: 'Login successful',
-          user: { username }
-        },
-        { status: 200 }
-      );
+    // Find user by username
+    const user = await prisma.user.findUnique({
+      where: { username },
+      include: { company: true },
+    });
 
-      // Set httpOnly cookie for session
-      response.cookies.set('session', sessionToken, {
-        httpOnly: true,
-        secure: false, // Allow HTTP in development
-        sameSite: 'lax',
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        path: '/', // Always use root path to ensure cookie is accessible from all routes
-        domain: undefined // Allow all domains
-      });
-
-      return response;
-    } else {
+    if (!user || !user.isActive) {
       return NextResponse.json(
-        { error: 'Invalid username or password' },
+        { error: 'Invalid credentials' },
         { status: 401 }
       );
     }
+
+    // Verify password
+    const isValid = await verifyPassword(password, user.password);
+
+    if (!isValid) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+
+    // Check if company is active (for non-superadmin users)
+    if (user.companyId && (!user.company || !user.company.isActive)) {
+      return NextResponse.json(
+        { error: 'Company is inactive' },
+        { status: 403 }
+      );
+    }
+
+    // Create session
+    const sessionToken = await createSession(user.id);
+
+    // Set cookie
+    const response = NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        companyId: user.companyId,
+        companyName: user.company?.name || null,
+      },
+    });
+
+    response.cookies.set('session', sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60, // 24 hours
+      path: '/',
+    });
+
+    return response;
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

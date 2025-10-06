@@ -1,0 +1,389 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "windows"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Companies - Multi-tenant support
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  apiUrl    String
+  apiToken  String   // Encrypted - RobotPOS API token
+  erpApiToken String? // ERP API token for data access (plain text UUID)
+  isActive  Boolean  @default(true)
+
+  // Sync schedule settings
+  dailySyncEnabled  Boolean @default(true)
+  dailySyncHour     Int     @default(2)   // 0-23 (default: 02:00)
+  dailySyncMinute   Int     @default(0)   // 0-59
+  weeklySyncEnabled Boolean @default(true)
+  weeklySyncDay     Int     @default(0)   // 0-6 (0=Sunday, default: Sunday)
+  weeklySyncHour    Int     @default(3)   // 0-23 (default: 03:00)
+  weeklySyncMinute  Int     @default(0)   // 0-59
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  syncBatches  SyncBatch[]
+  erpSnapshots ERPSnapshot[]
+  erpApiLogs   ERPApiLog[]
+
+  @@map("companies")
+}
+
+// Users - Support for SuperAdmin and Company Users
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String   // Hashed with bcrypt
+  role      Role     @default(USER)
+  companyId String?  // null for SuperAdmin
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@index([username])
+  @@index([companyId])
+  @@map("users")
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  USER
+}
+
+// Global SQL Queries - Shared across all companies
+model Query {
+  id          String        @id @default(uuid())
+  name        String
+  code        String        @unique
+  sqlContent  String        // TEXT field for SQL queries
+  description String?
+  category    QueryCategory @default(INVOICE)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([code])
+  @@index([category])
+  @@map("queries")
+}
+
+enum QueryCategory {
+  INVOICE
+  SALES
+  CUSTOM
+}
+
+// Session management
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================
+// SALES SYNC MODELS
+// ============================================
+
+// Raw sales data from SQL Server
+model SalesRaw {
+  id        String   @id @default(uuid())
+
+  // Primary identifiers
+  orderKey      String
+  transactionID String
+  lineKey       Int?
+
+  // Date fields
+  orderDateTime DateTime
+  sheetDate     String
+  importDate    DateTime
+
+  // Transaction details
+  menuItemID         String?
+  menuItemText       String
+  mainAccountingCode String?
+  accountingCode     String?
+  isMainCombo        Boolean
+  quantity           Float
+  extendedPrice      Float
+  taxPercent         Float
+
+  // Header fields
+  amountDue          Float
+  orderSubTotal      Float
+  orderStatus        Int
+  isInvoice          Boolean
+  headerDeleted      Boolean
+  transactionDeleted Boolean
+
+  // Branch information
+  branchID   Int
+  branchCode String
+  branchType String
+  isExternal Boolean
+
+  // Calculated fields
+  adjustedPrice Float
+  lineSubTotal  Float
+  lineTaxTotal  Float
+  lineTotal     Float
+
+  // Version control
+  orderHash   String
+  isLatest    Boolean @default(true)
+  version     Int     @default(1)
+  syncBatchId String
+
+  createdAt DateTime @default(now())
+
+  @@index([orderKey, isLatest])
+  @@index([importDate])
+  @@index([sheetDate])
+  @@index([syncBatchId])
+  @@index([branchCode])
+  @@index([accountingCode])
+  @@map("sales_raw")
+}
+
+// Aggregated sales summary
+model SalesSummary {
+  id String @id @default(uuid())
+
+  // Group by keys
+  sheetDate          String
+  mainAccountingCode String  @default("")
+  accountingCode     String
+  isMainCombo        Boolean
+  taxPercent         Float
+  branchID           Int
+  branchCode         String
+  isExternal         Boolean
+
+  // Aggregated values
+  quantity Float
+  subTotal Float
+  taxTotal Float
+  total    Float
+
+  // Metadata
+  version         Int      @default(1)
+  dataHash        String
+  lastModified    DateTime @default(now())
+  lastSyncBatchId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([sheetDate, branchCode, accountingCode, isMainCombo, taxPercent, mainAccountingCode])
+  @@index([sheetDate])
+  @@index([branchCode])
+  @@index([lastModified])
+  @@map("sales_summary")
+}
+
+// ERP snapshot records
+model ERPSnapshot {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  snapshotDate  DateTime
+  dataStartDate String
+  dataEndDate   String
+
+  recordCount Int @default(0)
+  deltaCount  Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  deltas SalesSummaryDelta[]
+
+  @@index([companyId, snapshotDate])
+  @@index([createdAt])
+  @@map("erp_snapshots")
+}
+
+// Delta change records
+model SalesSummaryDelta {
+  id String @id @default(uuid())
+
+  // Summary keys
+  sheetDate          String
+  mainAccountingCode String  @default("")
+  accountingCode     String
+  isMainCombo        Boolean
+  taxPercent         Float
+  branchID           Int
+  branchCode         String
+  isExternal         Boolean
+
+  // Change tracking
+  changeType String
+
+  // Old values
+  oldQuantity Float?
+  oldSubTotal Float?
+  oldTaxTotal Float?
+  oldTotal    Float?
+
+  // New values
+  newQuantity Float?
+  newSubTotal Float?
+  newTaxTotal Float?
+  newTotal    Float?
+
+  // Metadata
+  changedAt   DateTime  @default(now())
+  syncBatchId String
+  processed   Boolean   @default(false)
+  processedAt DateTime?
+
+  // Snapshot tracking
+  snapshotId String?
+  snapshot   ERPSnapshot? @relation(fields: [snapshotId], references: [id])
+  deltaType  String
+
+  affectedOrders DeltaAffectedOrder[]
+
+  @@index([sheetDate, processed])
+  @@index([changedAt])
+  @@index([syncBatchId])
+  @@index([processed])
+  @@index([snapshotId, deltaType])
+  @@map("sales_summary_deltas")
+}
+
+// Orders affected by delta
+model DeltaAffectedOrder {
+  id String @id @default(uuid())
+
+  deltaId   String
+  delta     SalesSummaryDelta @relation(fields: [deltaId], references: [id], onDelete: Cascade)
+
+  orderKey      String
+  changeType    String
+  orderDateTime DateTime
+  importDate    DateTime
+
+  orderQuantity Float
+  orderSubTotal Float
+  orderTaxTotal Float
+  orderTotal    Float
+
+  oldVersion Int?
+  newVersion Int
+  oldHash    String?
+  newHash    String
+
+  createdAt DateTime @default(now())
+
+  @@index([deltaId])
+  @@index([orderKey])
+  @@index([changeType])
+  @@map("delta_affected_orders")
+}
+
+// Sales change log
+model SalesChangeLog {
+  id String @id @default(uuid())
+
+  orderKey   String
+  changeType String
+
+  oldHash String?
+  newHash String
+
+  oldVersion Int?
+  newVersion Int
+
+  changedFields String?
+
+  // Full order data snapshot (JSON array of all transactions with versions)
+  orderSnapshot String? // JSON string containing version history
+
+  syncBatchId String
+  batch       SyncBatch @relation(fields: [syncBatchId], references: [id])
+  detectedAt  DateTime  @default(now())
+
+  @@index([orderKey])
+  @@index([syncBatchId])
+  @@index([detectedAt])
+  @@map("sales_change_logs")
+}
+
+// Sync batch records
+model SyncBatch {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  startDate String
+  endDate   String
+
+  status String
+
+  totalRecords     Int @default(0)
+  newRecords       Int @default(0)
+  updatedRecords   Int @default(0)
+  unchangedRecords Int @default(0)
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  duration    Int?
+
+  errorMessage String?
+  errorDetails String?
+
+  changeLogs SalesChangeLog[]
+
+  @@index([companyId, startedAt])
+  @@index([status])
+  @@map("sync_batches")
+}
+
+// ERP API Request Logs
+model ERPApiLog {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  endpoint      String // /api/erp/sales-summary veya /api/erp/deltas
+  method        String @default("GET")
+  startDate     String
+  endDate       String
+  filters       String? // JSON: {branchCode, accountingCode, changeType, vb.}
+
+  statusCode    Int
+  responseTime  Int // milliseconds
+  recordCount   Int @default(0)
+  errorMessage  String?
+
+  requestedAt DateTime @default(now())
+
+  @@index([companyId, requestedAt])
+  @@index([endpoint])
+  @@map("erp_api_logs")
+}
