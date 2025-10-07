@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const branchCode = searchParams.get('branchCode');
     const accountingCode = searchParams.get('accountingCode');
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -46,9 +48,13 @@ export async function GET(request: NextRequest) {
       where.accountingCode = accountingCode;
     }
 
+    const totalRecords = await prisma.salesSummary.count({ where });
+
     const summaries = await prisma.salesSummary.findMany({
       where,
       orderBy: [{ sheetDate: 'asc' }, { branchCode: 'asc' }, { accountingCode: 'asc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     });
 
     const totals = summaries.reduce(
@@ -66,6 +72,10 @@ export async function GET(request: NextRequest) {
       data: {
         dateRange: { startDate, endDate },
         recordCount: summaries.length,
+        totalRecords,
+        currentPage: page,
+        pageSize,
+        totalPages: Math.ceil(totalRecords / pageSize),
         totals,
         records: summaries.map((s) => ({
           sheetDate: s.sheetDate,

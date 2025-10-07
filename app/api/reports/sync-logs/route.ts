@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const status = searchParams.get('status');
     const companyId = searchParams.get('companyId');
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
 
     const where: any = {};
 
@@ -55,6 +57,8 @@ export async function GET(request: NextRequest) {
       where.status = status;
     }
 
+    const totalRecords = await prisma.syncBatch.count({ where });
+
     const batches = await prisma.syncBatch.findMany({
       where,
       include: {
@@ -69,7 +73,8 @@ export async function GET(request: NextRequest) {
       orderBy: {
         startedAt: 'desc',
       },
-      take: 100,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     });
 
     const formattedData = batches.map((batch) => ({
@@ -91,7 +96,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: formattedData,
+      data: {
+        records: formattedData,
+        totalRecords,
+        currentPage: page,
+        pageSize,
+        totalPages: Math.ceil(totalRecords / pageSize),
+      },
     });
   } catch (error) {
     console.error('[API] Fetch sync logs failed:', error);

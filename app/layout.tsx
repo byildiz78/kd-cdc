@@ -5,8 +5,8 @@ import { Inter } from 'next/font/google';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'robotPOS e-Belge Kontrol',
-  description: 'robotPOS e-Belge Kontrol',
+  title: 'robotPOS sync Manager',
+  description: 'robotPOS sync Manager',
 };
 
 export default function RootLayout({

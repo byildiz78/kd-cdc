@@ -16,6 +16,9 @@ export default function SyncLogsPage() {
     companyId: '',
   });
   const [companies, setCompanies] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const pageSize = 50;
 
   useEffect(() => {
     fetchCompanies();
@@ -23,7 +26,7 @@ export default function SyncLogsPage() {
 
   useEffect(() => {
     fetchLogs();
-  }, [filters]);
+  }, [filters, currentPage]);
 
   const fetchCompanies = async () => {
     try {
@@ -43,6 +46,8 @@ export default function SyncLogsPage() {
       const params = new URLSearchParams({
         startDate: filters.startDate,
         endDate: filters.endDate,
+        page: currentPage.toString(),
+        pageSize: pageSize.toString(),
         ...(filters.status && { status: filters.status }),
         ...(filters.companyId && { companyId: filters.companyId }),
       });
@@ -51,12 +56,21 @@ export default function SyncLogsPage() {
       const data = await response.json();
 
       if (data.success) {
-        setLogs(data.data);
+        setLogs(data.data.records || data.data);
+        setTotalRecords(data.data.totalRecords || 0);
       }
     } catch (error) {
       console.error('Failed to fetch logs:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const totalPages = Math.ceil(totalRecords / pageSize);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
     }
   };
 
@@ -267,6 +281,44 @@ export default function SyncLogsPage() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Toplam {totalRecords} kayıt (Sayfa {currentPage} / {totalPages})
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                İlk
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Önceki
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sonraki
+              </button>
+              <button
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Son
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

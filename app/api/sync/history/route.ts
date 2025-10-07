@@ -27,8 +27,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');
     const status = searchParams.get('status');
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const offset = parseInt(searchParams.get('offset') || '0');
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
+    const offset = (page - 1) * pageSize;
 
     // Build where clause
     const where: any = {};
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
           },
         },
         orderBy: { startedAt: 'desc' },
-        take: limit,
+        take: pageSize,
         skip: offset,
       }),
       prisma.syncBatch.count({ where }),
@@ -63,6 +64,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
+        totalRecords: total,
+        currentPage: page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
         batches: batches.map((batch) => ({
           id: batch.id,
           company: {
@@ -93,12 +98,6 @@ export async function GET(request: NextRequest) {
               }
             : null,
         })),
-        pagination: {
-          total,
-          limit,
-          offset,
-          hasMore: offset + batches.length < total,
-        },
       },
     });
   } catch (error) {

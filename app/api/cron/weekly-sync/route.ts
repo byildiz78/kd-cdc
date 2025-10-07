@@ -3,7 +3,7 @@ import { runWeeklySyncForAllCompanies } from '@/lib/services/scheduler.service';
 
 /**
  * GET /api/cron/weekly-sync
- * Haftal1k otomatik sync (her dakika çal1_1r, zaman1 gelen firmalar1 sync eder)
+ * Haftalik otomatik sync (her dakika calisir, zamani gelen firmalari sync eder)
  */
 export async function GET(request: NextRequest) {
   try {

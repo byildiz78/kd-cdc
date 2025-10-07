@@ -20,12 +20,15 @@ export default function SalesSummaryPage() {
     taxTotal: 0,
     total: 0,
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const pageSize = 50;
 
   useEffect(() => {
     if (filters.startDate && filters.endDate) {
       fetchSummaryData();
     }
-  }, [filters]);
+  }, [filters, currentPage]);
 
   const fetchSummaryData = async () => {
     setLoading(true);
@@ -33,6 +36,8 @@ export default function SalesSummaryPage() {
       const params = new URLSearchParams({
         startDate: filters.startDate,
         endDate: filters.endDate,
+        page: currentPage.toString(),
+        pageSize: pageSize.toString(),
         ...(filters.branchCode && { branchCode: filters.branchCode }),
         ...(filters.accountingCode && { accountingCode: filters.accountingCode }),
       });
@@ -43,11 +48,20 @@ export default function SalesSummaryPage() {
       if (data.success) {
         setSummaryData(data.data.records);
         setTotals(data.data.totals);
+        setTotalRecords(data.data.totalRecords || 0);
       }
     } catch (error) {
       console.error('Failed to fetch summary data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const totalPages = Math.ceil(totalRecords / pageSize);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
     }
   };
 
@@ -248,6 +262,44 @@ export default function SalesSummaryPage() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Toplam {totalRecords} kayıt (Sayfa {currentPage} / {totalPages})
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                İlk
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Önceki
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sonraki
+              </button>
+              <button
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Son
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

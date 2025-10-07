@@ -3,7 +3,7 @@ import { runDailySyncForAllCompanies } from '@/lib/services/scheduler.service';
 
 /**
  * GET /api/cron/daily-sync
- * Günlük otomatik sync (her dakika çal1_1r, zaman1 gelen firmalar1 sync eder)
+ * Gunluk otomatik sync (her dakika calisir, zamani gelen firmalari sync eder)
  */
 export async function GET(request: NextRequest) {
   try {

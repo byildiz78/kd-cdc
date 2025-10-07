@@ -8,6 +8,9 @@ export default function DeltaChangesPage() {
   const [loading, setLoading] = useState(true);
   const today = new Date().toISOString().split('T')[0];
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const pageSize = 50;
 
   const formatDateUTC = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -33,7 +36,7 @@ export default function DeltaChangesPage() {
 
   useEffect(() => {
     fetchChanges();
-  }, [filters]);
+  }, [filters, currentPage]);
 
   const fetchChanges = async () => {
     setLoading(true);
@@ -41,6 +44,8 @@ export default function DeltaChangesPage() {
       const params = new URLSearchParams({
         startDate: filters.startDate,
         endDate: filters.endDate,
+        page: currentPage.toString(),
+        pageSize: pageSize.toString(),
         ...(filters.deltaType && { deltaType: filters.deltaType }),
         ...(filters.processed && { processed: filters.processed }),
       });
@@ -51,11 +56,20 @@ export default function DeltaChangesPage() {
       if (data.success) {
         setChanges(data.data.records);
         setStats(data.data.stats);
+        setTotalRecords(data.data.totalRecords || 0);
       }
     } catch (error) {
       console.error('Failed to fetch changes:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const totalPages = Math.ceil(totalRecords / pageSize);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
     }
   };
 
@@ -273,6 +287,44 @@ export default function DeltaChangesPage() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Toplam {totalRecords} kayıt (Sayfa {currentPage} / {totalPages})
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                İlk
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Önceki
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sonraki
+              </button>
+              <button
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Son
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const deltaType = searchParams.get('deltaType');
     const processedParam = searchParams.get('processed');
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
 
     // Build where clause for delta
     const deltaWhere: any = {};
@@ -74,23 +76,34 @@ export async function GET(request: NextRequest) {
       deltaWhere.syncBatchId = { in: batchIds };
     }
 
+    const totalRecords = await prisma.salesSummaryDelta.count({ where: deltaWhere });
+
     deltas = await prisma.salesSummaryDelta.findMany({
       where: deltaWhere,
       orderBy: {
         changedAt: 'desc',
       },
-      take: 500,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     });
 
-    // Calculate stats
-    const totalDeltas = deltas.length;
-    const processedDeltas = deltas.filter((d) => d.processed).length;
+    // Calculate stats from ALL records (not just current page)
+    const allDeltas = await prisma.salesSummaryDelta.findMany({
+      where: deltaWhere,
+      select: { processed: true },
+    });
+    const totalDeltas = allDeltas.length;
+    const processedDeltas = allDeltas.filter((d) => d.processed).length;
     const pendingDeltas = totalDeltas - processedDeltas;
 
     return NextResponse.json({
       success: true,
       data: {
         records: deltas,
+        totalRecords,
+        currentPage: page,
+        pageSize,
+        totalPages: Math.ceil(totalRecords / pageSize),
         stats: {
           totalDeltas,
           processedDeltas,
