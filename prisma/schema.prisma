@@ -215,12 +215,21 @@ model ERPSnapshot {
   recordCount Int @default(0)
   deltaCount  Int @default(0)
 
+  // ERP Pull Status Tracking
+  erpStatus        String?   @default("PENDING") // PENDING, CONFIRMED, FAILED, TIMEOUT
+  erpPulledAt      DateTime? // When ERP started pulling data
+  erpConfirmedAt   DateTime? // When ERP confirmed successful pull
+  erpRecordCount   Int?      // Number of records ERP claims to have pulled
+  erpDeltaCount    Int?      // Number of deltas ERP claims to have pulled
+  erpErrorMessage  String?   // Error message if pull failed
+
   createdAt DateTime @default(now())
 
   deltas SalesSummaryDelta[]
 
   @@index([companyId, snapshotDate])
   @@index([createdAt])
+  @@index([erpStatus])
   @@map("erp_snapshots")
 }
 

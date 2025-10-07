@@ -83,6 +83,8 @@ export async function POST(request: NextRequest) {
         dataEndDate,
         recordCount: summaryCount,
         deltaCount: 0,
+        erpStatus: 'PENDING',
+        erpPulledAt: null,
       },
     });
 

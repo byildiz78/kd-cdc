@@ -6,6 +6,17 @@ import Sidebar from '@/components/Sidebar';
 import { RefreshCw, TrendingUp, CircleCheck as CheckCircle, Circle as XCircle, Clock, ArrowUpRight, ArrowDownRight, Database, Activity, Globe, Zap, Server } from 'lucide-react';
 import { getApiEndpoint } from '@/lib/utils/api';
 
+interface PendingSnapshot {
+  id: string;
+  companyName: string;
+  companyCode: string;
+  snapshotDate: string;
+  dataStartDate: string;
+  dataEndDate: string;
+  recordCount: number;
+  deltaCount: number;
+}
+
 interface DashboardStats {
   totalRecords: number;
   transferredRecords: number;
@@ -28,6 +39,8 @@ interface DashboardStats {
     avgResponseTime: number;
     totalRecordsServed: number;
   };
+  pendingSnapshots: PendingSnapshot[];
+  hasPendingSnapshots: boolean;
 }
 
 interface RecentActivity {
@@ -136,6 +149,34 @@ export default function DashboardPage() {
         </header>
 
         <div className="p-8">
+          {/* Pending Snapshots Alert */}
+          {stats.hasPendingSnapshots && stats.pendingSnapshots.length > 0 && (
+            <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <Clock className="h-5 w-5 text-yellow-400" />
+                </div>
+                <div className="ml-3 flex-1">
+                  <h3 className="text-sm font-medium text-yellow-800">
+                    ERP Çekimi Bekleyen Snapshot ({stats.pendingSnapshots.length})
+                  </h3>
+                  <div className="mt-2 text-sm text-yellow-700">
+                    <p className="mb-2">Aşağıdaki snapshot'lar ERP tarafından henüz çekilmedi:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      {stats.pendingSnapshots.map((snapshot) => (
+                        <li key={snapshot.id}>
+                          <span className="font-medium">{snapshot.companyName}</span> -
+                          {' '}{new Date(snapshot.snapshotDate).toLocaleString('tr-TR')}
+                          {' '}({snapshot.dataStartDate} - {snapshot.dataEndDate})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between">

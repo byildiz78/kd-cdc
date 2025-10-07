@@ -12,6 +12,7 @@ export default function SalesSummaryPage() {
     startDate: today,
     endDate: today,
     branchCode: '',
+    accountingCode: '',
   });
   const [totals, setTotals] = useState({
     quantity: 0,
@@ -33,6 +34,7 @@ export default function SalesSummaryPage() {
         startDate: filters.startDate,
         endDate: filters.endDate,
         ...(filters.branchCode && { branchCode: filters.branchCode }),
+        ...(filters.accountingCode && { accountingCode: filters.accountingCode }),
       });
 
       const response = await fetch(`/api/sales/summary?${params}`);
@@ -100,7 +102,7 @@ export default function SalesSummaryPage() {
           <Filter className="h-5 w-5 text-gray-600" />
           <h2 className="text-lg font-semibold text-gray-900">Filtreler</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Baslangic Tarihi *
@@ -131,6 +133,18 @@ export default function SalesSummaryPage() {
               type="text"
               value={filters.branchCode}
               onChange={(e) => setFilters({ ...filters, branchCode: e.target.value })}
+              placeholder="Tumu"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Muhasebe Kodu
+            </label>
+            <input
+              type="text"
+              value={filters.accountingCode}
+              onChange={(e) => setFilters({ ...filters, accountingCode: e.target.value })}
               placeholder="Tumu"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />

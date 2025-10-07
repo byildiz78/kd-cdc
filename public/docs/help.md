@@ -368,30 +368,125 @@ Delta'lar şu durumlarda oluşturulur:
 
 ### PRE_SNAPSHOT vs POST_SNAPSHOT
 
-- **PRE_SNAPSHOT**: Snapshot alınmadan **önce** değişiklikler (anlık deltaları ERP'ye push için)
-- **POST_SNAPSHOT**: Snapshot alındıktan **sonra** değişiklikler (tarihsel kayıt için)
+#### Delta Oluşturma Mantığı
+
+Sistem, ERP'nin veri çekme durumuna göre delta oluşturur:
+
+- **PRE_SNAPSHOT**: İlk snapshot oluşturulmadan **önce** yapılan değişiklikler
+  - Bu değişiklikler **delta olarak oluşturulmaz**
+  - Sadece SalesSummary'ye yazılır (baseline oluşturur)
+  - Log: `[Delta] Pre-snapshot change for X, merged into summary`
+
+- **POST_SNAPSHOT**: İlk snapshot oluşturulduktan **sonra** yapılan değişiklikler
+  - Bu değişiklikler **delta olarak kaydedilir**
+  - ERP tarafından çekilmeyi bekler
+  - SalesSummaryDelta tablosuna eklenir
+
+#### Snapshot Yaşam Döngüsü
 
 ```typescript
-// Snapshot oluşturma
-const snapshot = await prisma.eRPSnapshot.create({
-  data: {
-    companyId: company.id,
-    snapshotDate: new Date(),
-    dataStartDate: startDate,
-    dataEndDate: endDate,
-    recordCount: summaryData.length,
-    deltaCount: deltas.length
-  }
+// 1. İLK SYNC - Otomatik Snapshot Oluşturma
+// İlk sync'te hiç snapshot yoksa, otomatik oluşturulur
+const existingSnapshot = await prisma.eRPSnapshot.findFirst({
+  where: { companyId },
+  orderBy: { snapshotDate: 'desc' },
 });
 
-// Delta'ları snapshot'a bağla
-await prisma.salesSummaryDelta.updateMany({
-  where: { id: { in: deltaIds } },
-  data: {
-    snapshotId: snapshot.id,
-    deltaType: 'POST_SNAPSHOT'
-  }
-});
+if (!existingSnapshot) {
+  // İLK SNAPSHOT - BASELINE
+  await prisma.eRPSnapshot.create({
+    data: {
+      companyId,
+      snapshotDate: new Date(),
+      dataStartDate: startDate,
+      dataEndDate: endDate,
+      recordCount: summaryCount,
+      deltaCount: 0,
+      erpStatus: 'PENDING',      // ERP henüz çekmedi
+      erpPulledAt: null,
+    },
+  });
+  // Bu sync'te DELTA OLUŞTURULMAZ
+} else {
+  // İkinci ve sonraki sync'ler
+  // DELTA oluşturulur (POST_SNAPSHOT)
+  await createDeltaRecords(batch.id, companyId);
+}
+```
+
+#### ERP Snapshot Durumları
+
+```typescript
+// ERPSnapshot model - Yeni alanlar
+{
+  erpStatus: 'PENDING' | 'CONFIRMED' | 'FAILED' | 'TIMEOUT',
+  erpPulledAt: DateTime?,        // ERP veri çekmeye başladığında
+  erpConfirmedAt: DateTime?,     // ERP başarılı onay verdiğinde
+  erpRecordCount: Int?,          // ERP'nin çektiği kayıt sayısı
+  erpDeltaCount: Int?,           // ERP'nin çektiği delta sayısı
+  erpErrorMessage: String?       // Hata durumunda mesaj
+}
+```
+
+#### Snapshot Akışı
+
+```
+SYNC 1 (5 Ekim)
+  ↓
+SNAPSHOT 1 oluştur (PENDING) - Baseline
+  ↓
+ERP ÇEKER (gece 02:00)
+  ├─ GET /api/erp/sales-summary?afterSnapshotId=snapshot1
+  ├─ Response: { summary: [...], deltas: [], currentSnapshotId: snapshot1 }
+  ├─ ERP kendi DB'sine yazar
+  └─ POST /api/erp/confirm-pull
+       Body: { snapshotId: snapshot1, status: "SUCCESS" }
+  ↓
+SNAPSHOT 1 → CONFIRMED
+SNAPSHOT 2 oluştur (PENDING) - Bir sonraki dönem için
+  ↓
+SYNC 2 (6 Ekim)
+  ↓
+DELTA OLUŞUR (POST_SNAPSHOT) - 5 Ekim verilerinde değişiklik varsa
+  ↓
+ERP ÇEKER (gece 02:00)
+  ├─ GET /api/erp/sales-summary?afterSnapshotId=snapshot2
+  ├─ Response: { summary: [...], deltas: [5 delta], currentSnapshotId: snapshot2 }
+  ├─ ERP deltalarla birlikte alır
+  └─ POST /api/erp/confirm-pull
+       Body: { snapshotId: snapshot2, status: "SUCCESS", deltaCount: 5 }
+  ↓
+SNAPSHOT 2 → CONFIRMED
+SNAPSHOT 3 oluştur (PENDING)
+```
+
+#### ERP Confirm Pull Endpoint
+
+```bash
+# ERP veri çekme işlemini onaylar
+POST /api/erp/confirm-pull
+Authorization: Bearer <erp-token>
+Content-Type: application/json
+
+{
+  "snapshotId": "abc-123-def-456",
+  "status": "SUCCESS",  # veya "FAILED"
+  "recordCount": 150,   # ERP'nin çektiği kayıt sayısı
+  "deltaCount": 5,      # ERP'nin çektiği delta sayısı
+  "errorMessage": null  # Hata varsa mesaj
+}
+```
+
+**SUCCESS durumunda:**
+1. Snapshot `CONFIRMED` olarak işaretlenir
+2. İlgili deltalar `processed: true` yapılır
+3. Yeni snapshot (PENDING) oluşturulur - bir sonraki çekim için
+
+**FAILED durumunda:**
+1. Snapshot `FAILED` olarak işaretlenir
+2. Deltalar processed yapılmaz
+3. Yeni snapshot oluşturulmaz
+4. Hata mesajı kaydedilir
 ```
 
 ---
@@ -536,19 +631,26 @@ export async function verifyERPToken(request: NextRequest) {
 }
 ```
 
-### Endpoint 1: Sales Summary
+### Endpoint 1: Sales Summary (Güncellenmiş)
 
 **Endpoint**: `GET /api/erp/sales-summary`
 
-**Amaç**: Belirli tarih aralığındaki özet satış verilerini döner.
+**Amaç**: Belirli tarih aralığındaki özet satış verilerini ve isteğe bağlı deltaları döner.
 
-**Örnek İstek**:
+**Parametreler**:
+- `startDate` (required): YYYY-MM-DD
+- `endDate` (required): YYYY-MM-DD
+- `branchCode` (optional): Şube filtresi
+- `accountingCode` (optional): Muhasebe kodu filtresi
+- `afterSnapshotId` (optional): **Yeni!** Bu snapshot'tan sonraki deltaları da döndürür
+
+**Örnek İstek (Deltalarla birlikte)**:
 ```bash
-curl --location 'http://localhost:3000/api/erp/sales-summary?startDate=2025-10-01&endDate=2025-10-31&branchCode=001' \
+curl --location 'http://localhost:3000/api/erp/sales-summary?startDate=2025-10-01&endDate=2025-10-31&afterSnapshotId=abc-123&branchCode=001' \
 --header 'Authorization: Bearer a01818e0-8d19-44a9-a796-b1fd0f89d371'
 ```
 
-**Response**:
+**Response (afterSnapshotId olmadan)**:
 ```json
 {
   "success": true,
@@ -564,6 +666,42 @@ curl --location 'http://localhost:3000/api/erp/sales-summary?startDate=2025-10-0
     "filters": {
       "branchCode": "001",
       "accountingCode": null
+    },
+    "snapshot": null,
+    "totals": {
+      "totalQuantity": 1250,
+      "totalSubTotal": 125000.50,
+      "totalTaxTotal": 25000.10,
+      "totalAmount": 150000.60
+    },
+    "records": [...],
+    "deltas": [],
+    "hasDeltas": false
+  }
+}
+```
+
+**Response (afterSnapshotId ile - Deltalar dahil)**:
+```json
+{
+  "success": true,
+  "company": {
+    "code": "KD",
+    "name": "Kahve Dünyası"
+  },
+  "data": {
+    "dateRange": {
+      "startDate": "2025-10-01",
+      "endDate": "2025-10-31"
+    },
+    "filters": {
+      "branchCode": "001",
+      "accountingCode": null
+    },
+    "snapshot": {
+      "id": "current-snapshot-uuid",
+      "snapshotDate": "2025-10-06T02:00:00Z",
+      "erpStatus": "PENDING"
     },
     "totals": {
       "totalQuantity": 1250,
@@ -581,12 +719,121 @@ curl --location 'http://localhost:3000/api/erp/sales-summary?startDate=2025-10-0
         "taxTotal": 1000,
         "total": 6000
       }
-    ]
+    ],
+    "deltas": [
+      {
+        "id": "delta-uuid",
+        "sheetDate": "2025-10-01",
+        "branchCode": "001",
+        "accountingCode": "100.01.001",
+        "changeType": "UPDATE",
+        "oldQuantity": 45,
+        "oldTotal": 5400,
+        "newQuantity": 50,
+        "newTotal": 6000,
+        "changedAt": "2025-10-06T08:30:00Z"
+      }
+    ],
+    "hasDeltas": true
   }
 }
 ```
 
-### Endpoint 2: Deltas
+**Kullanım Senaryosu:**
+```typescript
+// ERP ilk çekimde afterSnapshotId kullanmaz
+const firstPull = await fetch('/api/erp/sales-summary?startDate=X&endDate=Y');
+
+// Sonraki çekimlerde son snapshot ID'yi gönderir
+const nextPull = await fetch('/api/erp/sales-summary?startDate=X&endDate=Y&afterSnapshotId=snapshot-123');
+// Response'da hem tüm summary hem de deltalar gelir
+```
+
+### Endpoint 2: Confirm Pull (Yeni!)
+
+**Endpoint**: `POST /api/erp/confirm-pull`
+
+**Amaç**: ERP sisteminin veri çekme işlemini onaylaması için kullanılır.
+
+**Request Body**:
+```json
+{
+  "snapshotId": "abc-123-def-456",
+  "status": "SUCCESS",  // veya "FAILED"
+  "recordCount": 150,   // Opsiyonel: ERP'nin çektiği kayıt sayısı
+  "deltaCount": 5,      // Opsiyonel: ERP'nin çektiği delta sayısı
+  "errorMessage": null  // FAILED durumunda hata mesajı
+}
+```
+
+**Örnek İstek (Başarılı)**:
+```bash
+curl --location --request POST 'http://localhost:3000/api/erp/confirm-pull' \
+--header 'Authorization: Bearer a01818e0-8d19-44a9-a796-b1fd0f89d371' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "snapshotId": "abc-123",
+  "status": "SUCCESS",
+  "recordCount": 150,
+  "deltaCount": 5
+}'
+```
+
+**Response (SUCCESS)**:
+```json
+{
+  "success": true,
+  "message": "Pull confirmed successfully. New snapshot created for next period.",
+  "data": {
+    "snapshotId": "abc-123",
+    "status": "CONFIRMED",
+    "confirmedAt": "2025-10-06T02:05:00Z",
+    "nextSnapshotId": "xyz-789",
+    "processedDeltaCount": 5
+  }
+}
+```
+
+**Örnek İstek (Başarısız)**:
+```bash
+curl --location --request POST 'http://localhost:3000/api/erp/confirm-pull' \
+--header 'Authorization: Bearer a01818e0-8d19-44a9-a796-b1fd0f89d371' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "snapshotId": "abc-123",
+  "status": "FAILED",
+  "errorMessage": "Database connection timeout"
+}'
+```
+
+**Response (FAILED)**:
+```json
+{
+  "success": true,
+  "message": "Pull failure recorded. Snapshot preserved for retry.",
+  "data": {
+    "snapshotId": "abc-123",
+    "status": "FAILED",
+    "errorMessage": "Database connection timeout"
+  }
+}
+```
+
+**İşlem Akışı:**
+
+1. **SUCCESS durumunda:**
+   - Snapshot `CONFIRMED` olarak işaretlenir
+   - İlgili deltalar `processed: true` yapılır
+   - Yeni snapshot (PENDING) oluşturulur
+   - Sonraki çekim için hazır hale gelir
+
+2. **FAILED durumunda:**
+   - Snapshot `FAILED` olarak işaretlenir
+   - Deltalar processed yapılmaz
+   - Yeni snapshot oluşturulmaz
+   - ERP retry yapabilir
+
+### Endpoint 3: Deltas
 
 **Endpoint**: `GET /api/erp/deltas`
 
@@ -849,7 +1096,7 @@ model SyncBatch {
 ```
 
 #### 6. ERPSnapshot
-**Amaç**: ERP snapshot kayıtları
+**Amaç**: ERP snapshot kayıtları ve callback tracking
 
 ```prisma
 model ERPSnapshot {
@@ -863,12 +1110,42 @@ model ERPSnapshot {
   recordCount   Int @default(0)
   deltaCount    Int @default(0)
 
+  // ERP Pull Status Tracking (Yeni!)
+  erpStatus        String?   @default("PENDING")
+  erpPulledAt      DateTime? // ERP ne zaman çekmeye başladı
+  erpConfirmedAt   DateTime? // ERP ne zaman onayladı
+  erpRecordCount   Int?      // ERP'nin çektiği kayıt sayısı
+  erpDeltaCount    Int?      // ERP'nin çektiği delta sayısı
+  erpErrorMessage  String?   // Hata durumunda mesaj
+
   createdAt     DateTime @default(now())
 
   deltas        SalesSummaryDelta[]
 
   @@index([companyId, snapshotDate])
+  @@index([erpStatus])
 }
+```
+
+**Snapshot Durumları:**
+- `PENDING`: ERP henüz veri çekmedi (beklemede)
+- `CONFIRMED`: ERP başarıyla çekti ve onayladı
+- `FAILED`: ERP çekme işlemi başarısız oldu
+- `TIMEOUT`: ERP belirli sürede confirm etmedi
+
+**Kullanım:**
+```typescript
+// Dashboard'da pending snapshot uyarısı
+const pendingSnapshots = await prisma.eRPSnapshot.findMany({
+  where: { erpStatus: 'PENDING' },
+  include: { company: true }
+});
+
+// ERP Pull History raporu
+const history = await prisma.eRPSnapshot.findMany({
+  where: { companyId },
+  orderBy: { snapshotDate: 'desc' }
+});
 ```
 
 #### 7. ERPApiLog
@@ -968,4 +1245,5 @@ model ERPApiLog {
 ## İletişim & Destek
 
 Sorularınız için:
+
 - Email: destek@robotpos.com

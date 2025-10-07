@@ -70,6 +70,20 @@ export async function GET(request: NextRequest) {
       return acc;
     }, {});
 
+    // Get product names from SalesRaw for each unique accountingCode
+    const accountingCodes = [...new Set(deltas.map(d => d.accountingCode))];
+    const productNames: Record<string, string> = {};
+
+    for (const code of accountingCodes) {
+      const sample = await prisma.salesRaw.findFirst({
+        where: { accountingCode: code },
+        select: { menuItemText: true },
+      });
+      if (sample) {
+        productNames[code] = sample.menuItemText;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -91,6 +105,7 @@ export async function GET(request: NextRequest) {
               code: d.accountingCode,
               isMainCombo: d.isMainCombo,
             },
+            productName: productNames[d.accountingCode] || d.accountingCode,
             taxPercent: d.taxPercent,
             changeType: d.changeType,
             oldValues: d.oldQuantity !== null ? {

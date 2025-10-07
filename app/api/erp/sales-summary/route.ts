@@ -43,6 +43,14 @@ import { verifyERPToken } from '@/lib/auth/erp-auth';
  *           type: string
  *         description: Muhasebe kodu filtresi
  *         example: "100.01.001"
+ *       - in: query
+ *         name: afterSnapshotId
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Son snapshot ID - Bu ID'den sonraki deltaları da döndürür
+ *         example: "abc-123-def-456"
  *     responses:
  *       200:
  *         description: Başarılı response
@@ -109,6 +117,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const branchCode = searchParams.get('branchCode');
     const accountingCode = searchParams.get('accountingCode');
+    const afterSnapshotId = searchParams.get('afterSnapshotId'); // Optional: only return deltas after this snapshot
 
     logData.startDate = startDate || '';
     logData.endDate = endDate || '';
@@ -192,6 +201,78 @@ export async function GET(request: NextRequest) {
 
     logData.recordCount = summaryData.length;
 
+    // Get current pending snapshot (always)
+    const currentSnapshot = await prisma.eRPSnapshot.findFirst({
+      where: {
+        companyId,
+        erpStatus: 'PENDING',
+      },
+      orderBy: {
+        snapshotDate: 'desc',
+      },
+    });
+
+    // Fetch deltas if afterSnapshotId provided
+    let deltas: any[] = [];
+
+    if (afterSnapshotId) {
+      // Verify snapshot exists and belongs to this company
+      const snapshot = await prisma.eRPSnapshot.findFirst({
+        where: {
+          id: afterSnapshotId,
+          companyId,
+        },
+      });
+
+      if (snapshot) {
+        // Fetch deltas created after the given snapshot
+        const deltaWhere: any = {
+          sheetDate: {
+            gte: startDate,
+            lte: endDate,
+          },
+          processed: false,
+          deltaType: 'POST_SNAPSHOT',
+          snapshotId: {
+            not: null,
+          },
+        };
+
+        // Add filters if provided
+        if (branchCode) deltaWhere.branchCode = branchCode;
+        if (accountingCode) deltaWhere.accountingCode = accountingCode;
+
+        const deltaRecords = await prisma.salesSummaryDelta.findMany({
+          where: deltaWhere,
+          orderBy: {
+            changedAt: 'desc',
+          },
+        });
+
+        deltas = deltaRecords.map((delta) => ({
+          id: delta.id,
+          sheetDate: delta.sheetDate,
+          branchCode: delta.branchCode,
+          branchID: delta.branchID,
+          accountingCode: delta.accountingCode,
+          mainAccountingCode: delta.mainAccountingCode || null,
+          isMainCombo: delta.isMainCombo,
+          isExternal: delta.isExternal,
+          taxPercent: delta.taxPercent,
+          changeType: delta.changeType,
+          oldQuantity: delta.oldQuantity,
+          oldSubTotal: delta.oldSubTotal,
+          oldTaxTotal: delta.oldTaxTotal,
+          oldTotal: delta.oldTotal,
+          newQuantity: delta.newQuantity,
+          newSubTotal: delta.newSubTotal,
+          newTaxTotal: delta.newTaxTotal,
+          newTotal: delta.newTotal,
+          changedAt: delta.changedAt,
+        }));
+      }
+    }
+
     return NextResponse.json({
       success: true,
       company: {
@@ -207,6 +288,11 @@ export async function GET(request: NextRequest) {
           branchCode: branchCode || null,
           accountingCode: accountingCode || null,
         },
+        snapshot: currentSnapshot ? {
+          id: currentSnapshot.id,
+          snapshotDate: currentSnapshot.snapshotDate,
+          erpStatus: currentSnapshot.erpStatus,
+        } : null,
         totals,
         records: summaryData.map((record) => ({
           sheetDate: record.sheetDate,
@@ -224,6 +310,8 @@ export async function GET(request: NextRequest) {
           version: record.version,
           lastModified: record.lastModified,
         })),
+        deltas: deltas,
+        hasDeltas: deltas.length > 0,
       },
     });
   } catch (error) {

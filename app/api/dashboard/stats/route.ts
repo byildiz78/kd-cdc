@@ -56,6 +56,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true, role: true, companyId: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -196,6 +205,26 @@ export async function GET(request: NextRequest) {
       _sum: { recordCount: true },
     });
 
+    // Pending snapshots (ERP tarafından henüz çekilmemiş)
+    const pendingSnapshots = await prisma.eRPSnapshot.findMany({
+      where: {
+        erpStatus: 'PENDING',
+        ...(user.role !== 'SUPERADMIN' && user.companyId ? { companyId: user.companyId } : {}),
+      },
+      orderBy: {
+        snapshotDate: 'desc',
+      },
+      take: 5,
+      include: {
+        company: {
+          select: {
+            name: true,
+            code: true,
+          },
+        },
+      },
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -224,6 +253,18 @@ export async function GET(request: NextRequest) {
           avgResponseTime: avgErpResponseTime,
           totalRecordsServed: totalErpRecords._sum.recordCount || 0,
         },
+        // Pending Snapshots
+        pendingSnapshots: pendingSnapshots.map(snapshot => ({
+          id: snapshot.id,
+          companyName: snapshot.company.name,
+          companyCode: snapshot.company.code,
+          snapshotDate: snapshot.snapshotDate,
+          dataStartDate: snapshot.dataStartDate,
+          dataEndDate: snapshot.dataEndDate,
+          recordCount: snapshot.recordCount,
+          deltaCount: snapshot.deltaCount,
+        })),
+        hasPendingSnapshots: pendingSnapshots.length > 0,
       },
     });
   } catch (error) {

@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const branchCode = searchParams.get('branchCode');
+    const accountingCode = searchParams.get('accountingCode');
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -39,6 +40,10 @@ export async function GET(request: NextRequest) {
 
     if (branchCode) {
       where.branchCode = branchCode;
+    }
+
+    if (accountingCode) {
+      where.accountingCode = accountingCode;
     }
 
     const summaries = await prisma.salesSummary.findMany({

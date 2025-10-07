@@ -88,6 +88,12 @@ export default function Sidebar({ username, onLogout }: SidebarProps) {
           icon: Activity,
           href: '/reports/erp-api-logs',
           active: pathname === '/reports/erp-api-logs'
+        },
+        {
+          name: 'ERP Cekim Gecmisi',
+          icon: Database,
+          href: '/reports/erp-pull-history',
+          active: pathname === '/reports/erp-pull-history'
         }
       ]
     }

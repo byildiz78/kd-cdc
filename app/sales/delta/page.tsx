@@ -130,19 +130,25 @@ export default function SalesDeltaPage() {
                                 {delta.changeType}
                               </span>
                               <span className="text-sm font-medium text-gray-900">
-                                {delta.sheetDate}
+                                Satış Tarihi: {delta.sheetDate}
                               </span>
                               <span className="text-sm text-gray-600">
-                                Sube: {delta.branch.code}
-                              </span>
-                              <span className="text-sm font-mono text-gray-600">
-                                {delta.accounting.code}
+                                Şube: {delta.branch.code}
                               </span>
                               {delta.metadata.processed && (
                                 <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
-                                  Islendi
+                                  İşlendi
                                 </span>
                               )}
+                            </div>
+
+                            <div className="flex items-center space-x-3">
+                              <span className="text-sm font-medium text-gray-700">
+                                Ürün: {delta.productName}
+                              </span>
+                              <span className="text-sm font-mono text-gray-500">
+                                ({delta.accounting.code})
+                              </span>
                             </div>
 
                             <div className="grid grid-cols-4 gap-4 text-sm">

@@ -135,17 +135,25 @@ export async function syncSalesData(options: SyncOptions): Promise<SyncResult> {
         },
       });
 
+      // İlk snapshot'ı endDate'in 23:59:59'unda oluştur
+      // Böylece aynı gün içinde yapılan ikinci sync gereksiz delta oluşturmaz
+      const snapshotDateTime = new Date(endDate);
+      snapshotDateTime.setHours(23, 59, 59, 999);
+
       await prisma.eRPSnapshot.create({
         data: {
           companyId,
-          snapshotDate: new Date(),
+          snapshotDate: snapshotDateTime,
           dataStartDate: startDate,
           dataEndDate: endDate,
           recordCount: summaryCount,
           deltaCount: 0,
+          erpStatus: 'PENDING',
+          erpPulledAt: null,
         },
       });
-      console.log('✅ İlk snapshot oluşturuldu (bundan sonraki sync\'lerde deltalar oluşacak)');
+      console.log('✅ İlk snapshot oluşturuldu (PENDING status, ERP çekmeyi bekliyor)');
+      console.log(`   📅 Snapshot tarihi: ${snapshotDateTime.toISOString()} (${endDate} 23:59:59)`);
     } else {
       // 8b. Delta kayıtları oluştur (snapshot varsa)
       console.log('🔺 Delta kayıtları oluşturuluyor...');
