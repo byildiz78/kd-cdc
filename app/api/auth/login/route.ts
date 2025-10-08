@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     response.cookies.set('session', sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: false, // Set to true if using HTTPS
       sameSite: 'lax',
       maxAge: 24 * 60 * 60, // 24 hours
       path: '/',

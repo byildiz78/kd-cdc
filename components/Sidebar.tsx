@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FileText, LayoutDashboard, Database, ChevronLeft, ChevronRight, User, LogOut, BookOpen, Settings, Code2, Building2, Table, BarChart3, AlertCircle, RefreshCw, TrendingUp, FileLineChart, Trash2, Activity } from 'lucide-react';
+import { FileText, LayoutDashboard, Database, ChevronLeft, ChevronRight, ChevronDown, User, LogOut, BookOpen, Settings, Code2, Building2, Table, BarChart3, AlertCircle, RefreshCw, TrendingUp, FileLineChart, Trash2, Activity } from 'lucide-react';
 
 interface SidebarProps {
   username?: string;
@@ -12,7 +12,18 @@ interface SidebarProps {
 
 export default function Sidebar({ username, onLogout }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
+    '/sales': true,
+    '/reports': false,
+  });
   const pathname = usePathname();
+
+  const toggleMenu = (href: string) => {
+    setExpandedMenus(prev => ({
+      ...prev,
+      [href]: !prev[href]
+    }));
+  };
 
   const menuItems = [
     {
@@ -129,23 +140,48 @@ export default function Sidebar({ username, onLogout }: SidebarProps) {
       <nav className="flex-1 p-4 space-y-2">
         {menuItems.map((item) => {
           const Icon = item.icon;
+          const hasSubItems = item.subItems && item.subItems.length > 0;
+          const isExpanded = expandedMenus[item.href];
+
           return (
             <div key={item.href}>
-              <Link
-                href={item.href}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                  item.active
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
-                title={collapsed ? item.name : ''}
-              >
-                <Icon className="h-5 w-5 flex-shrink-0" />
-                {!collapsed && (
-                  <span className="font-medium">{item.name}</span>
-                )}
-              </Link>
-              {!collapsed && item.subItems && (
+              {hasSubItems ? (
+                <button
+                  onClick={() => toggleMenu(item.href)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
+                    item.active
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                  title={collapsed ? item.name : ''}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Icon className="h-5 w-5 flex-shrink-0" />
+                    {!collapsed && (
+                      <span className="font-medium">{item.name}</span>
+                    )}
+                  </div>
+                  {!collapsed && (
+                    <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  )}
+                </button>
+              ) : (
+                <Link
+                  href={item.href}
+                  className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                    item.active
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                  title={collapsed ? item.name : ''}
+                >
+                  <Icon className="h-5 w-5 flex-shrink-0" />
+                  {!collapsed && (
+                    <span className="font-medium">{item.name}</span>
+                  )}
+                </Link>
+              )}
+              {!collapsed && hasSubItems && isExpanded && (
                 <div className="ml-4 mt-2 space-y-1">
                   {item.subItems.map((subItem) => {
                     const SubIcon = subItem.icon;

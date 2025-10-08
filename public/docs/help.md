@@ -19,7 +19,7 @@ Bu sistem, RobotPOS'tan satış verilerini çeken, değişiklikleri takip eden v
 ### Temel Bileşenler:
 - **Frontend**: Next.js 13 App Router + React
 - **Backend**: Next.js API Routes
-- **Database**: SQLite (Prisma ORM)
+- **Database**: posgre SQL (Prisma ORM)
 - **Authentication**: Cookie-based session + Bearer token (ERP)
 - **Scheduling**: Cron jobs (günlük/haftalık)
 
@@ -39,7 +39,7 @@ Bu sistem, RobotPOS'tan satış verilerini çeken, değişiklikleri takip eden v
                   │
                   ▼
 ┌─────────────────────────────────────────────┐
-│  SQLite Database                            │
+│  posgre Database                            │
 │  - SalesRaw (ham veri + versiyonlar)       │
 │  - SalesSummary (özet)                      │
 │  - SalesSummaryDelta (değişiklikler)       │
