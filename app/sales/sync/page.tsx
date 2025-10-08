@@ -20,10 +20,16 @@ export default function SalesSyncPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
   const pageSize = 50;
+  const [workerStatus, setWorkerStatus] = useState<any>(null);
 
   useEffect(() => {
     fetchCompanies();
     fetchSyncHistory();
+    fetchWorkerStatus();
+
+    // Refresh worker status every 10 seconds
+    const statusInterval = setInterval(fetchWorkerStatus, 10000);
+    return () => clearInterval(statusInterval);
   }, [currentPage]);
 
   const fetchCompanies = async () => {
@@ -57,6 +63,19 @@ export default function SalesSyncPage() {
       console.error('Failed to fetch sync history:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchWorkerStatus = async () => {
+    try {
+      const response = await fetch('/api/worker/status');
+      const data = await response.json();
+
+      if (data.success) {
+        setWorkerStatus(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch worker status:', error);
     }
   };
 
@@ -141,14 +160,27 @@ export default function SalesSyncPage() {
           unchangedRecords: data.data.statistics.unchangedRecords,
         });
 
+        // Auto close modal after 10 seconds
+        setTimeout(() => {
+          setShowModal(false);
+        }, 10000);
+
         fetchSyncHistory();
       } else {
         getModal()?.setFailed(data.error || 'Bilinmeyen hata olustu');
+        // Auto close modal after 10 seconds on error too
+        setTimeout(() => {
+          setShowModal(false);
+        }, 10000);
       }
     } catch (error) {
       console.error('Sync failed:', error);
       const getModal = () => (window as any).__syncProgressModal;
       getModal()?.setFailed('Senkronizasyon basarisiz oldu');
+      // Auto close modal after 10 seconds on error too
+      setTimeout(() => {
+        setShowModal(false);
+      }, 10000);
     } finally {
       setSyncing(false);
     }
@@ -193,6 +225,23 @@ export default function SalesSyncPage() {
     return `${minutes}dk ${remainingSeconds}s`;
   };
 
+  const formatTimeUntil = (minutes: number | null) => {
+    if (minutes === null) return '-';
+    if (minutes < 0) return 'Şimdi';
+    if (minutes < 60) return `${minutes} dakika`;
+
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+
+    if (hours < 24) {
+      return `${hours} saat ${remainingMinutes} dakika`;
+    }
+
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return `${days} gün ${remainingHours} saat`;
+  };
+
   return (
     <>
       <SyncProgressModal
@@ -212,6 +261,81 @@ export default function SalesSyncPage() {
             Manuel senkronizasyon baslatma ve gecmis kayitlar
           </p>
         </div>
+
+        {/* Worker Status */}
+        {workerStatus && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Arka Plan Senkronizasyon Durumu</h2>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-600">
+                  {workerStatus.worker.initialized ? 'Aktif' : 'Devre dışı'}
+                </span>
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    workerStatus.worker.initialized && workerStatus.worker.syncScheduler.running
+                      ? 'bg-green-500 animate-pulse'
+                      : 'bg-red-500'
+                  }`}
+                ></div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {workerStatus.companies.map((company: any) => (
+                <div key={company.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-900">
+                      {company.name} ({company.code})
+                    </h3>
+                    <span
+                      className={`px-2 py-1 text-xs rounded-full ${
+                        company.syncEnabled
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {company.syncEnabled ? 'Aktif' : 'Devre dışı'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <div className="text-gray-600">Sync Tipi</div>
+                      <div className="font-medium text-gray-900">{company.nextSyncReason}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-600">Son Sync</div>
+                      <div className="font-medium text-gray-900">
+                        {company.lastSyncAt
+                          ? new Date(company.lastSyncAt).toLocaleString('tr-TR')
+                          : 'Henüz yapılmadı'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-600">Sonraki Sync</div>
+                      <div className="font-medium text-gray-900">
+                        {company.nextSyncAt
+                          ? new Date(company.nextSyncAt).toLocaleString('tr-TR')
+                          : '-'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-600">Kalan Süre</div>
+                      <div className="font-medium text-blue-600">
+                        {formatTimeUntil(company.minutesUntilNextSync)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 text-xs text-gray-500">
+              Sunucu Zamanı: {workerStatus.serverTime ? new Date(workerStatus.serverTime).toLocaleString('tr-TR') : '-'}
+            </div>
+          </div>
+        )}
 
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Manuel Senkronizasyon</h2>

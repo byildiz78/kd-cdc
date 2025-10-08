@@ -25,10 +25,11 @@ export default function CompanyForm({ initialData, onSubmit, onCancel, isEdit = 
     apiToken: initialData?.apiToken === '***' ? '' : (initialData?.apiToken || ''),
     erpApiToken: initialData?.erpApiToken || '',
     isActive: initialData?.isActive ?? true,
-    dailySyncEnabled: initialData?.dailySyncEnabled ?? true,
+    syncType: initialData?.syncType || 'DAILY',
+    syncEnabled: initialData?.syncEnabled ?? true,
+    syncIntervalMinutes: initialData?.syncIntervalMinutes ?? 30,
     dailySyncHour: initialData?.dailySyncHour ?? 2,
     dailySyncMinute: initialData?.dailySyncMinute ?? 0,
-    weeklySyncEnabled: initialData?.weeklySyncEnabled ?? true,
     weeklySyncDay: initialData?.weeklySyncDay ?? 0,
     weeklySyncHour: initialData?.weeklySyncHour ?? 3,
     weeklySyncMinute: initialData?.weeklySyncMinute ?? 0,
@@ -173,69 +174,128 @@ export default function CompanyForm({ initialData, onSubmit, onCancel, isEdit = 
       <div className="border-t pt-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Senkronizasyon Ayarları</h3>
 
-        {/* Daily Sync */}
-        <div className="space-y-4 mb-6">
+        {/* Sync Enabled */}
+        <div className="mb-6">
           <label className="flex items-center space-x-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={formData.dailySyncEnabled}
-              onChange={(e) => setFormData({ ...formData, dailySyncEnabled: e.target.checked })}
+              checked={formData.syncEnabled}
+              onChange={(e) => setFormData({ ...formData, syncEnabled: e.target.checked })}
               className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
-            <span className="text-sm font-medium text-gray-700">Günlük Senkronizasyon</span>
+            <span className="text-sm font-medium text-gray-700">Otomatik Senkronizasyon Aktif</span>
           </label>
-
-          {formData.dailySyncEnabled && (
-            <div className="ml-7 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Saat</label>
-                <select
-                  value={formData.dailySyncHour}
-                  onChange={(e) => setFormData({ ...formData, dailySyncHour: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  {Array.from({ length: 24 }, (_, i) => (
-                    <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Dakika</label>
-                <select
-                  value={formData.dailySyncMinute}
-                  onChange={(e) => setFormData({ ...formData, dailySyncMinute: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  {[0, 15, 30, 45].map(m => (
-                    <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Weekly Sync */}
-        <div className="space-y-4">
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={formData.weeklySyncEnabled}
-              onChange={(e) => setFormData({ ...formData, weeklySyncEnabled: e.target.checked })}
-              className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-            />
-            <span className="text-sm font-medium text-gray-700">Haftalık Senkronizasyon</span>
-          </label>
+        {formData.syncEnabled && (
+          <>
+            {/* Sync Type Selection */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-3">Senkronizasyon Tipi</label>
+              <div className="space-y-3">
+                <label className="flex items-center space-x-3 cursor-pointer p-3 border border-gray-300 rounded-lg hover:bg-gray-50">
+                  <input
+                    type="radio"
+                    name="syncType"
+                    value="INTERVAL"
+                    checked={formData.syncType === 'INTERVAL'}
+                    onChange={(e) => setFormData({ ...formData, syncType: e.target.value })}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900">Belirli Dakika Aralığında</span>
+                    <p className="text-sm text-gray-500">Her X dakikada bir otomatik senkronizasyon</p>
+                  </div>
+                </label>
 
-          {formData.weeklySyncEnabled && (
-            <div className="ml-7 grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Gün</label>
-                <select
-                  value={formData.weeklySyncDay}
-                  onChange={(e) => setFormData({ ...formData, weeklySyncDay: parseInt(e.target.value) })}
+                <label className="flex items-center space-x-3 cursor-pointer p-3 border border-gray-300 rounded-lg hover:bg-gray-50">
+                  <input
+                    type="radio"
+                    name="syncType"
+                    value="DAILY"
+                    checked={formData.syncType === 'DAILY'}
+                    onChange={(e) => setFormData({ ...formData, syncType: e.target.value })}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900">Günlük</span>
+                    <p className="text-sm text-gray-500">Her gün belirli bir saatte</p>
+                  </div>
+                </label>
+
+                <label className="flex items-center space-x-3 cursor-pointer p-3 border border-gray-300 rounded-lg hover:bg-gray-50">
+                  <input
+                    type="radio"
+                    name="syncType"
+                    value="WEEKLY"
+                    checked={formData.syncType === 'WEEKLY'}
+                    onChange={(e) => setFormData({ ...formData, syncType: e.target.value })}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900">Haftalık</span>
+                    <p className="text-sm text-gray-500">Haftanın belirli bir günü ve saatinde</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Interval Sync Settings */}
+            {formData.syncType === 'INTERVAL' && (
+              <div className="ml-7 mb-6">
+                <label className="block text-sm text-gray-600 mb-2">Dakika Aralığı</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="1440"
+                  value={formData.syncIntervalMinutes}
+                  onChange={(e) => setFormData({ ...formData, syncIntervalMinutes: parseInt(e.target.value) || 30 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
+                />
+                <p className="mt-1 text-xs text-gray-500">1-1440 dakika arası (max 24 saat)</p>
+              </div>
+            )}
+
+            {/* Daily Sync Settings */}
+            {formData.syncType === 'DAILY' && (
+              <div className="ml-7 mb-6 grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Saat</label>
+                  <select
+                    value={formData.dailySyncHour}
+                    onChange={(e) => setFormData({ ...formData, dailySyncHour: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Dakika</label>
+                  <select
+                    value={formData.dailySyncMinute}
+                    onChange={(e) => setFormData({ ...formData, dailySyncMinute: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    {[0, 15, 30, 45].map(m => (
+                      <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Weekly Sync Settings */}
+            {formData.syncType === 'WEEKLY' && (
+              <div className="ml-7 mb-6 grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Gün</label>
+                  <select
+                    value={formData.weeklySyncDay}
+                    onChange={(e) => setFormData({ ...formData, weeklySyncDay: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
                   <option value={0}>Pazar</option>
                   <option value={1}>Pazartesi</option>
                   <option value={2}>Salı</option>
@@ -270,8 +330,9 @@ export default function CompanyForm({ initialData, onSubmit, onCancel, isEdit = 
                 </select>
               </div>
             </div>
-          )}
-        </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="flex items-center">

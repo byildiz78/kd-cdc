@@ -132,10 +132,11 @@ export async function PUT(
       apiToken,
       erpApiToken,
       isActive,
-      dailySyncEnabled,
+      syncType,
+      syncEnabled,
+      syncIntervalMinutes,
       dailySyncHour,
       dailySyncMinute,
-      weeklySyncEnabled,
       weeklySyncDay,
       weeklySyncHour,
       weeklySyncMinute
@@ -162,10 +163,11 @@ export async function PUT(
     if (isActive !== undefined) updateData.isActive = isActive;
 
     // Sync schedule settings
-    if (dailySyncEnabled !== undefined) updateData.dailySyncEnabled = dailySyncEnabled;
+    if (syncType !== undefined) updateData.syncType = syncType;
+    if (syncEnabled !== undefined) updateData.syncEnabled = syncEnabled;
+    if (syncIntervalMinutes !== undefined) updateData.syncIntervalMinutes = syncIntervalMinutes;
     if (dailySyncHour !== undefined) updateData.dailySyncHour = dailySyncHour;
     if (dailySyncMinute !== undefined) updateData.dailySyncMinute = dailySyncMinute;
-    if (weeklySyncEnabled !== undefined) updateData.weeklySyncEnabled = weeklySyncEnabled;
     if (weeklySyncDay !== undefined) updateData.weeklySyncDay = weeklySyncDay;
     if (weeklySyncHour !== undefined) updateData.weeklySyncHour = weeklySyncHour;
     if (weeklySyncMinute !== undefined) updateData.weeklySyncMinute = weeklySyncMinute;

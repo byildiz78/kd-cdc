@@ -19,10 +19,18 @@ model Company {
   isActive  Boolean  @default(true)
 
   // Sync schedule settings
-  dailySyncEnabled  Boolean @default(true)
+  syncType          String  @default("DAILY") // INTERVAL, DAILY, WEEKLY
+  syncEnabled       Boolean @default(true)
+
+  // Interval sync (minutes)
+  syncIntervalMinutes Int?  @default(30)
+  lastSyncAt          DateTime?
+
+  // Daily sync
   dailySyncHour     Int     @default(2)   // 0-23 (default: 02:00)
   dailySyncMinute   Int     @default(0)   // 0-59
-  weeklySyncEnabled Boolean @default(true)
+
+  // Weekly sync
   weeklySyncDay     Int     @default(0)   // 0-6 (0=Sunday, default: Sunday)
   weeklySyncHour    Int     @default(3)   // 0-23 (default: 03:00)
   weeklySyncMinute  Int     @default(0)   // 0-59
