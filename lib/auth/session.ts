@@ -20,19 +20,15 @@ export function generateSessionToken(): string {
  */
 export async function getSession(request: NextRequest): Promise<SessionData | null> {
   const cookieHeader = request.headers.get('cookie');
-  console.log('[Session] Cookie header:', cookieHeader);
 
   const sessionToken = cookieHeader
     ?.split(';')
     .find((c) => c.trim().startsWith('session='))
     ?.split('=')[1];
 
-  console.log('[Session] Session token:', sessionToken ? 'Found' : 'Not found');
-
   if (!sessionToken) return null;
 
   const decoded = decodeURIComponent(sessionToken);
-  console.log('[Session] Decoded token length:', decoded.length);
 
   const session = await prisma.session.findUnique({
     where: { token: decoded },

@@ -25,6 +25,7 @@ model Company {
   // Interval sync (minutes)
   syncIntervalMinutes Int?  @default(30)
   lastSyncAt          DateTime?
+  lastImportDate      DateTime? // Last h.ImportDate from RobotPOS for incremental sync
 
   // Daily sync
   dailySyncHour     Int     @default(2)   // 0-23 (default: 02:00)

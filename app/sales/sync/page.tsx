@@ -253,13 +253,27 @@ export default function SalesSyncPage() {
 
       <div className="p-8">
         <div className="mb-8">
-          <div className="flex items-center space-x-3 mb-2">
-            <RefreshCw className="h-8 w-8 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-900">Senkronizasyon Yonetimi</h1>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center space-x-3 mb-2">
+                <RefreshCw className="h-8 w-8 text-blue-600" />
+                <h1 className="text-3xl font-bold text-gray-900">Senkronizasyon Yonetimi</h1>
+              </div>
+              <p className="text-gray-600">
+                Manuel senkronizasyon baslatma ve gecmis kayitlar
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                fetchSyncHistory();
+                fetchWorkerStatus();
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Yenile</span>
+            </button>
           </div>
-          <p className="text-gray-600">
-            Manuel senkronizasyon baslatma ve gecmis kayitlar
-          </p>
         </div>
 
         {/* Worker Status */}
@@ -288,15 +302,22 @@ export default function SalesSyncPage() {
                     <h3 className="font-semibold text-gray-900">
                       {company.name} ({company.code})
                     </h3>
-                    <span
-                      className={`px-2 py-1 text-xs rounded-full ${
-                        company.syncEnabled
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {company.syncEnabled ? 'Aktif' : 'Devre dışı'}
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      {company.lastImportDate && (
+                        <span className="px-2 py-1 text-xs rounded bg-blue-50 text-blue-700 border border-blue-200">
+                          Veri Güncelliği: {company.lastImportDate.replace('T', ' ').substring(0, 19)}
+                        </span>
+                      )}
+                      <span
+                        className={`px-2 py-1 text-xs rounded-full ${
+                          company.syncEnabled
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {company.syncEnabled ? 'Aktif' : 'Devre dışı'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

@@ -113,6 +113,41 @@ export async function syncSalesData(options: SyncOptions): Promise<SyncResult> {
     console.log(`   🔄 Güncellenen: ${updatedRecords}`);
     console.log(`   ⏸️  Değişmeyen: ${unchangedRecords}`);
 
+    // 6b. Find and store max ImportDate for incremental sync
+    let maxImportDate: Date | null = null;
+    if (rawData.length > 0) {
+      try {
+        // ImportDate is in the raw data
+        const importDates = rawData
+          .map(row => row.ImportDate)
+          .filter(d => d != null && d !== '')
+          .map(d => {
+            try {
+              return new Date(d);
+            } catch {
+              return null;
+            }
+          })
+          .filter(d => d !== null && !isNaN(d.getTime())) as Date[];
+
+        if (importDates.length > 0) {
+          maxImportDate = new Date(Math.max(...importDates.map(d => d.getTime())));
+          console.log(`\n📅 Max ImportDate found: ${maxImportDate.toISOString()}`);
+
+          // Update company's lastImportDate
+          await prisma.company.update({
+            where: { id: companyId },
+            data: { lastImportDate: maxImportDate },
+          });
+          console.log('✅ Company lastImportDate updated for incremental sync');
+        } else {
+          console.log('⚠️  No valid ImportDate found in data');
+        }
+      } catch (error) {
+        console.error('⚠️  Error processing ImportDate:', error);
+      }
+    }
+
     // 7. Summary tablosunu güncelle
     console.log('\n📊 Summary tablosu güncelleniyor...');
     await updateSummaries(batch.id);

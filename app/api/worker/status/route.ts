@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
         syncEnabled: true,
         syncIntervalMinutes: true,
         lastSyncAt: true,
+        lastImportDate: true,
         dailySyncHour: true,
         dailySyncMinute: true,
         weeklySyncDay: true,

@@ -8,6 +8,7 @@ import { syncSalesData } from '@/lib/services/sync.service';
 export class SyncScheduler {
   private timer: NodeJS.Timeout | null = null;
   private isRunning = false;
+  private syncingCompanies: Set<string> = new Set(); // Track companies currently syncing
 
   start() {
     if (this.timer) {
@@ -137,8 +138,33 @@ export class SyncScheduler {
         }
 
         if (shouldSync) {
+          // Check if this company is already syncing
+          if (this.syncingCompanies.has(company.id)) {
+            console.log(`[Scheduler] ⏭️  Skipping ${company.name} - sync already in progress`);
+            continue;
+          }
+
           console.log(`[Scheduler] ✅ Triggering sync for ${company.name} (${company.code}) - Reason: ${syncReason}`);
-          await this.triggerSync(company);
+
+          // Mark company as syncing
+          this.syncingCompanies.add(company.id);
+
+          // Update lastSyncAt BEFORE starting sync to prevent duplicate triggers
+          await prisma.company.update({
+            where: { id: company.id },
+            data: { lastSyncAt: new Date() },
+          });
+
+          // Trigger sync (non-blocking - fire and forget)
+          this.triggerSync(company)
+            .catch(error => {
+              console.error(`[Scheduler] Sync failed for ${company.name}:`, error);
+            })
+            .finally(() => {
+              // Remove from syncing set when done
+              this.syncingCompanies.delete(company.id);
+              console.log(`[Scheduler] 🔓 Released lock for ${company.name}`);
+            });
         }
       }
     } catch (error) {
@@ -150,11 +176,24 @@ export class SyncScheduler {
 
   private async triggerSync(company: any) {
     try {
-      // Calculate date range (yesterday to yesterday for daily historical sync)
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const startDate = `${yesterday.toISOString().split('T')[0]} 00:00:00`;
-      const endDate = `${yesterday.toISOString().split('T')[0]} 23:59:59`;
+      // Calculate date range - use lastImportDate for incremental sync
+      let startDate: string;
+      let endDate: string;
+      const now = new Date();
+
+      if (company.lastImportDate) {
+        // Incremental sync: from lastImportDate to now
+        startDate = new Date(company.lastImportDate).toISOString().replace('T', ' ').substring(0, 19);
+        endDate = now.toISOString().replace('T', ' ').substring(0, 19);
+        console.log(`[Scheduler] Incremental sync for ${company.name}: ${startDate} to ${endDate}`);
+      } else {
+        // First sync: yesterday's data
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        startDate = `${yesterday.toISOString().split('T')[0]} 00:00:00`;
+        endDate = `${yesterday.toISOString().split('T')[0]} 23:59:59`;
+        console.log(`[Scheduler] First sync for ${company.name}: ${startDate} to ${endDate}`);
+      }
 
       console.log(`[Scheduler] Syncing ${company.name}: ${startDate} to ${endDate}`);
 
@@ -162,12 +201,6 @@ export class SyncScheduler {
         companyId: company.id,
         startDate,
         endDate,
-      });
-
-      // Update lastSyncAt
-      await prisma.company.update({
-        where: { id: company.id },
-        data: { lastSyncAt: new Date() },
       });
 
       console.log(`[Scheduler] ✅ Sync completed for ${company.name}`);
@@ -180,6 +213,7 @@ export class SyncScheduler {
     return {
       running: this.isRunning,
       hasTimer: this.timer !== null,
+      activeSyncs: this.syncingCompanies.size,
     };
   }
 }
