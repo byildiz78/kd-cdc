@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const snapshotId = searchParams.get('snapshotId');
     const includeProcessed = searchParams.get('includeProcessed') === 'true';
+    const summaryOnly = searchParams.get('summaryOnly') === 'true';
 
     const where: any = {
       deltaType: 'POST_SNAPSHOT',
@@ -34,6 +35,32 @@ export async function GET(request: NextRequest) {
       where.processed = false;
     }
 
+    // If summaryOnly, just return snapshot counts
+    if (summaryOnly) {
+      const snapshots = await prisma.eRPSnapshot.findMany({
+        where: { companyId: user.companyId },
+        orderBy: { snapshotDate: 'desc' },
+        select: {
+          id: true,
+          snapshotDate: true,
+          dataStartDate: true,
+          dataEndDate: true,
+          deltaCount: true,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          snapshots: snapshots.map(s => ({
+            snapshot: s,
+            deltaCount: s.deltaCount || 0,
+            deltas: [],
+          })),
+        },
+      });
+    }
+
     const deltas = await prisma.salesSummaryDelta.findMany({
       where,
       include: {
@@ -45,17 +72,12 @@ export async function GET(request: NextRequest) {
             dataEndDate: true,
           },
         },
-        affectedOrders: {
-          select: {
-            orderKey: true,
-            changeType: true,
-            orderDateTime: true,
-            orderQuantity: true,
-            orderTotal: true,
-          },
+        _count: {
+          select: { affectedOrders: true },
         },
       },
       orderBy: { changedAt: 'desc' },
+      take: snapshotId ? undefined : 100, // Limit to 100 if no specific snapshot
     });
 
     const groupedBySnapshot = deltas.reduce((acc: any, delta) => {
@@ -120,7 +142,7 @@ export async function GET(request: NextRequest) {
               taxTotal: d.newTaxTotal,
               total: d.newTotal,
             },
-            affectedOrderCount: d.affectedOrders.length,
+            affectedOrderCount: d._count.affectedOrders,
             metadata: {
               changedAt: d.changedAt,
               syncBatchId: d.syncBatchId,

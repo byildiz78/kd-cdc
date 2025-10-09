@@ -8,16 +8,18 @@ export default function SalesDeltaPage() {
   const [deltaData, setDeltaData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedSnapshots, setExpandedSnapshots] = useState<Set<string>>(new Set());
+  const [loadingSnapshots, setLoadingSnapshots] = useState<Set<string>>(new Set());
   const [includeProcessed, setIncludeProcessed] = useState(false);
 
   useEffect(() => {
-    fetchDeltaData();
+    fetchSummaryData();
   }, [includeProcessed]);
 
-  const fetchDeltaData = async () => {
+  const fetchSummaryData = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
+        summaryOnly: 'true',
         includeProcessed: includeProcessed.toString(),
       });
 
@@ -34,12 +36,45 @@ export default function SalesDeltaPage() {
     }
   };
 
+  const fetchSnapshotDetails = async (snapshotId: string) => {
+    setLoadingSnapshots(prev => new Set(prev).add(snapshotId));
+    try {
+      const params = new URLSearchParams({
+        snapshotId,
+        includeProcessed: includeProcessed.toString(),
+      });
+
+      const response = await fetch(`/api/sales/delta?${params}`);
+      const data = await response.json();
+
+      if (data.success && data.data.snapshots.length > 0) {
+        const snapshotData = data.data.snapshots[0];
+        setDeltaData(prev => prev.map(item =>
+          item.snapshot.id === snapshotId ? snapshotData : item
+        ));
+      }
+    } catch (error) {
+      console.error('Failed to fetch snapshot details:', error);
+    } finally {
+      setLoadingSnapshots(prev => {
+        const next = new Set(prev);
+        next.delete(snapshotId);
+        return next;
+      });
+    }
+  };
+
   const toggleSnapshot = (snapshotId: string) => {
     const newExpanded = new Set(expandedSnapshots);
     if (newExpanded.has(snapshotId)) {
       newExpanded.delete(snapshotId);
     } else {
       newExpanded.add(snapshotId);
+      // Lazy load details if not already loaded
+      const snapshot = deltaData.find(s => s.snapshot.id === snapshotId);
+      if (snapshot && snapshot.deltas.length === 0) {
+        fetchSnapshotDetails(snapshotId);
+      }
     }
     setExpandedSnapshots(newExpanded);
   };
@@ -114,12 +149,18 @@ export default function SalesDeltaPage() {
                   </div>
                   <div className="flex items-center space-x-4">
                     <div className="text-sm text-gray-600">
-                      <span className="font-medium">{deltas.length}</span> delta kaydi
+                      <span className="font-medium">{snapshot?.deltaCount || deltas.length}</span> delta kaydi
                     </div>
                   </div>
                 </div>
 
-                {isExpanded && (
+                {isExpanded && loadingSnapshots.has(snapshot?.id || 'none') && (
+                  <div className="p-8 text-center text-gray-500">
+                    Yükleniyor...
+                  </div>
+                )}
+
+                {isExpanded && !loadingSnapshots.has(snapshot?.id || 'none') && (
                   <div className="divide-y divide-gray-200">
                     {deltas.map((delta: any) => (
                       <div key={delta.id} className="px-6 py-4 hover:bg-gray-50">

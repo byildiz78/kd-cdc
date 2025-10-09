@@ -40,8 +40,9 @@ export async function updateSummaries(syncBatchId: string): Promise<void> {
     const summary = calculateSummaryFromGroup(transactions);
     const summaryHash = calculateSummaryHash(summary);
 
-    // mainAccountingCode null ise empty string kullan (Prisma unique constraint için)
+    // Null değerleri empty string'e çevir (Prisma unique constraint için)
     const mainAccCode = key.mainAccountingCode || '';
+    const accCode = key.accountingCode || '';
 
     // Mevcut summary'yi bul
     const existing = await prisma.salesSummary.findUnique({
@@ -49,7 +50,7 @@ export async function updateSummaries(syncBatchId: string): Promise<void> {
         sheetDate_branchCode_accountingCode_isMainCombo_taxPercent_mainAccountingCode: {
           sheetDate: key.sheetDate,
           branchCode: key.branchCode,
-          accountingCode: key.accountingCode,
+          accountingCode: accCode,
           isMainCombo: key.isMainCombo,
           taxPercent: key.taxPercent,
           mainAccountingCode: mainAccCode,
@@ -63,7 +64,7 @@ export async function updateSummaries(syncBatchId: string): Promise<void> {
         sheetDate_branchCode_accountingCode_isMainCombo_taxPercent_mainAccountingCode: {
           sheetDate: key.sheetDate,
           branchCode: key.branchCode,
-          accountingCode: key.accountingCode,
+          accountingCode: accCode,
           isMainCombo: key.isMainCombo,
           taxPercent: key.taxPercent,
           mainAccountingCode: mainAccCode,
@@ -82,7 +83,7 @@ export async function updateSummaries(syncBatchId: string): Promise<void> {
       create: {
         sheetDate: key.sheetDate,
         mainAccountingCode: mainAccCode,
-        accountingCode: key.accountingCode,
+        accountingCode: accCode,
         isMainCombo: key.isMainCombo,
         taxPercent: key.taxPercent,
         branchID: key.branchID,
